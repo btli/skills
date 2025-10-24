@@ -1,16 +1,21 @@
 #!/usr/bin/env python3
 """
 Start one or more servers, wait for them to be ready, run a command, then clean up.
+Supports npm, pnpm, yarn, turborepo, Next.js, and other modern development servers.
 
 Usage:
-    # Single server
+    # Single server (npm/pnpm/yarn)
     python scripts/with_server.py --server "npm run dev" --port 5173 -- python automation.py
-    python scripts/with_server.py --server "npm start" --port 3000 -- python test.py
+    python scripts/with_server.py --server "pnpm dev" --port 3000 -- python test.py
+    python scripts/with_server.py --server "pnpm next dev" --port 3000 -- python test.py
+
+    # Turborepo monorepo
+    python scripts/with_server.py --server "pnpm --filter web dev" --port 3000 -- python test.py
 
     # Multiple servers
     python scripts/with_server.py \
-      --server "cd backend && python server.py" --port 3000 \
-      --server "cd frontend && npm run dev" --port 5173 \
+      --server "cd backend && python server.py" --port 3001 \
+      --server "cd frontend && pnpm dev" --port 3000 \
       -- python test.py
 """
 
