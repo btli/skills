@@ -1,30 +1,55 @@
 #!/usr/bin/env node
 /**
- * Get DOM snapshot with selectors
+ * DOM snapshot with selectors using pure Chrome DevTools Protocol
  * Usage: node snapshot.js [--url https://example.com] [--output snapshot.json]
  */
-import { getBrowser, getPage, closeBrowser, parseArgs, outputJSON, outputError } from './lib/browser.js';
-import fs from 'fs/promises';
+import { launchChrome, createPage, closeChrome, outputJSON, outputError } from './lib/cdp.js';
+import { writeFile } from 'fs/promises';
+import { resolve } from 'path';
+import yargs from 'yargs';
+import { hideBin } from 'yargs/helpers';
+
+const argv = yargs(hideBin(process.argv))
+  .option('url', {
+    type: 'string',
+    description: 'URL to snapshot'
+  })
+  .option('output', {
+    type: 'string',
+    description: 'Output file for snapshot data'
+  })
+  .option('headless', {
+    type: 'boolean',
+    description: 'Run in headless mode',
+    default: true
+  })
+  .option('close', {
+    type: 'boolean',
+    description: 'Close browser after snapshot',
+    default: true
+  })
+  .help()
+  .argv;
 
 async function snapshot() {
-  const args = parseArgs(process.argv.slice(2));
-
   try {
-    const browser = await getBrowser({
-      headless: args.headless !== 'false'
+    // Launch Chrome
+    await launchChrome({
+      headless: argv.headless
     });
 
-    const page = await getPage(browser);
+    // Create page
+    const page = await createPage({
+      viewport: { width: 1920, height: 1080 }
+    });
 
     // Navigate if URL provided
-    if (args.url) {
-      await page.goto(args.url, {
-        waitUntil: args['wait-until'] || 'networkidle2'
-      });
+    if (argv.url) {
+      await page.navigate(argv.url, { waitUntil: 'load' });
     }
 
     // Get interactive elements with metadata
-    const elements = await page.evaluate(() => {
+    const elements = await page.evaluate(`(() => {
       const interactiveSelectors = [
         'a[href]',
         'button',
@@ -47,12 +72,33 @@ async function snapshot() {
         // Generate unique selector
         let uniqueSelector = '';
         if (el.id) {
-          uniqueSelector = `#${el.id}`;
+          uniqueSelector = '#' + el.id;
         } else if (el.className) {
           const classes = Array.from(el.classList).join('.');
-          uniqueSelector = `${el.tagName.toLowerCase()}.${classes}`;
+          uniqueSelector = el.tagName.toLowerCase() + '.' + classes;
         } else {
           uniqueSelector = el.tagName.toLowerCase();
+        }
+
+        function getXPath(element) {
+          if (element.id) {
+            return '//*[@id="' + element.id + '"]';
+          }
+          if (element === document.body) {
+            return '/html/body';
+          }
+          let ix = 0;
+          const siblings = element.parentNode?.childNodes || [];
+          for (let i = 0; i < siblings.length; i++) {
+            const sibling = siblings[i];
+            if (sibling === element) {
+              return getXPath(element.parentNode) + '/' + element.tagName.toLowerCase() + '[' + (ix + 1) + ']';
+            }
+            if (sibling.nodeType === 1 && sibling.tagName === element.tagName) {
+              ix++;
+            }
+          }
+          return '';
         }
 
         elements.push({
@@ -77,51 +123,31 @@ async function snapshot() {
         });
       });
 
-      function getXPath(element) {
-        if (element.id) {
-          return `//*[@id="${element.id}"]`;
-        }
-        if (element === document.body) {
-          return '/html/body';
-        }
-        let ix = 0;
-        const siblings = element.parentNode?.childNodes || [];
-        for (let i = 0; i < siblings.length; i++) {
-          const sibling = siblings[i];
-          if (sibling === element) {
-            return getXPath(element.parentNode) + '/' + element.tagName.toLowerCase() + '[' + (ix + 1) + ']';
-          }
-          if (sibling.nodeType === 1 && sibling.tagName === element.tagName) {
-            ix++;
-          }
-        }
-        return '';
-      }
-
       return elements;
-    });
+    })()`);
+
+    const url = await page.evaluate('window.location.href');
+    const title = await page.evaluate('document.title');
 
     const result = {
       success: true,
-      url: page.url(),
-      title: await page.title(),
+      url,
+      title,
       elementCount: elements.length,
-      elements: elements
+      elements,
+      timestamp: new Date().toISOString()
     };
 
-    if (args.output) {
-      await fs.writeFile(args.output, JSON.stringify(result, null, 2));
-      outputJSON({
-        success: true,
-        output: args.output,
-        elementCount: elements.length
-      });
-    } else {
-      outputJSON(result);
+    if (argv.output) {
+      const outputPath = resolve(argv.output);
+      await writeFile(outputPath, JSON.stringify(result, null, 2));
+      result.outputFile = outputPath;
     }
 
-    if (args.close !== 'false') {
-      await closeBrowser();
+    outputJSON(result);
+
+    if (argv.close) {
+      await closeChrome();
     }
   } catch (error) {
     outputError(error);

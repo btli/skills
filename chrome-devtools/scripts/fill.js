@@ -1,62 +1,80 @@
 #!/usr/bin/env node
 /**
- * Fill form fields
- * Usage: node fill.js --selector "#input" --value "text" [--url https://example.com]
+ * Fill a form field using pure Chrome DevTools Protocol
+ * Usage: node fill.js --selector "#email" --value "user@example.com" [--url https://example.com]
  */
-import { getBrowser, getPage, closeBrowser, parseArgs, outputJSON, outputError } from './lib/browser.js';
+import { launchChrome, createPage, closeChrome, outputJSON, outputError } from './lib/cdp.js';
+import yargs from 'yargs';
+import { hideBin } from 'yargs/helpers';
+
+const argv = yargs(hideBin(process.argv))
+  .option('selector', {
+    type: 'string',
+    description: 'CSS selector of input element',
+    demandOption: true
+  })
+  .option('value', {
+    type: 'string',
+    description: 'Value to fill',
+    demandOption: true
+  })
+  .option('url', {
+    type: 'string',
+    description: 'URL to navigate to before filling'
+  })
+  .option('headless', {
+    type: 'boolean',
+    description: 'Run in headless mode',
+    default: true
+  })
+  .option('wait-until', {
+    type: 'string',
+    description: 'Wait until event',
+    default: 'load'
+  })
+  .option('close', {
+    type: 'boolean',
+    description: 'Close browser after filling',
+    default: true
+  })
+  .help()
+  .argv;
 
 async function fill() {
-  const args = parseArgs(process.argv.slice(2));
-
-  if (!args.selector) {
-    outputError(new Error('--selector is required'));
-    return;
-  }
-
-  if (!args.value) {
-    outputError(new Error('--value is required'));
-    return;
-  }
-
   try {
-    const browser = await getBrowser({
-      headless: args.headless !== 'false'
+    // Launch Chrome
+    await launchChrome({
+      headless: argv.headless
     });
 
-    const page = await getPage(browser);
+    // Create page
+    const page = await createPage({
+      viewport: { width: 1920, height: 1080 }
+    });
 
     // Navigate if URL provided
-    if (args.url) {
-      await page.goto(args.url, {
-        waitUntil: args['wait-until'] || 'networkidle2'
+    if (argv.url) {
+      await page.navigate(argv.url, {
+        waitUntil: argv['wait-until']
       });
     }
 
-    // Wait for element
-    await page.waitForSelector(args.selector, {
-      visible: true,
-      timeout: parseInt(args.timeout || '5000')
-    });
+    // Fill element
+    await page.type(argv.selector, argv.value);
 
-    // Clear existing value if specified
-    if (args.clear === 'true') {
-      await page.$eval(args.selector, el => el.value = '');
-    }
+    const url = await page.evaluate('window.location.href');
 
-    // Type into element
-    await page.type(args.selector, args.value, {
-      delay: parseInt(args.delay || '0')
-    });
-
-    outputJSON({
+    const result = {
       success: true,
-      selector: args.selector,
-      value: args.value,
-      url: page.url()
-    });
+      selector: argv.selector,
+      value: argv.value,
+      url
+    };
 
-    if (args.close !== 'false') {
-      await closeBrowser();
+    outputJSON(result);
+
+    if (argv.close) {
+      await closeChrome();
     }
   } catch (error) {
     outputError(error);

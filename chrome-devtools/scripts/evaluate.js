@@ -1,45 +1,74 @@
 #!/usr/bin/env node
 /**
- * Execute JavaScript in page context
+ * Evaluate JavaScript in page context using pure Chrome DevTools Protocol
  * Usage: node evaluate.js --script "document.title" [--url https://example.com]
  */
-import { getBrowser, getPage, closeBrowser, parseArgs, outputJSON, outputError } from './lib/browser.js';
+import { launchChrome, createPage, closeChrome, outputJSON, outputError } from './lib/cdp.js';
+import yargs from 'yargs';
+import { hideBin } from 'yargs/helpers';
+
+const argv = yargs(hideBin(process.argv))
+  .option('script', {
+    type: 'string',
+    description: 'JavaScript code to evaluate',
+    demandOption: true
+  })
+  .option('url', {
+    type: 'string',
+    description: 'URL to navigate to before evaluation'
+  })
+  .option('headless', {
+    type: 'boolean',
+    description: 'Run in headless mode',
+    default: true
+  })
+  .option('wait-until', {
+    type: 'string',
+    description: 'Wait until event',
+    default: 'load'
+  })
+  .option('close', {
+    type: 'boolean',
+    description: 'Close browser after evaluation',
+    default: true
+  })
+  .help()
+  .argv;
 
 async function evaluate() {
-  const args = parseArgs(process.argv.slice(2));
-
-  if (!args.script) {
-    outputError(new Error('--script is required'));
-    return;
-  }
-
   try {
-    const browser = await getBrowser({
-      headless: args.headless !== 'false'
+    // Launch Chrome
+    await launchChrome({
+      headless: argv.headless
     });
 
-    const page = await getPage(browser);
+    // Create page
+    const page = await createPage({
+      viewport: { width: 1920, height: 1080 }
+    });
 
     // Navigate if URL provided
-    if (args.url) {
-      await page.goto(args.url, {
-        waitUntil: args['wait-until'] || 'networkidle2'
+    if (argv.url) {
+      await page.navigate(argv.url, {
+        waitUntil: argv['wait-until']
       });
     }
 
-    const result = await page.evaluate((script) => {
-      // eslint-disable-next-line no-eval
-      return eval(script);
-    }, args.script);
+    // Evaluate script
+    const scriptResult = await page.evaluate(argv.script);
 
-    outputJSON({
+    const url = await page.evaluate('window.location.href');
+
+    const result = {
       success: true,
-      result: result,
-      url: page.url()
-    });
+      result: scriptResult,
+      url
+    };
 
-    if (args.close !== 'false') {
-      await closeBrowser();
+    outputJSON(result);
+
+    if (argv.close) {
+      await closeChrome();
     }
   } catch (error) {
     outputError(error);

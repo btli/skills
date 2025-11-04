@@ -1,66 +1,74 @@
 #!/usr/bin/env node
 /**
- * Click an element
- * Usage: node click.js --selector ".button" [--url https://example.com] [--wait-for ".result"]
+ * Click an element using pure Chrome DevTools Protocol
+ * Usage: node click.js --selector button.submit [--url https://example.com]
  */
-import { getBrowser, getPage, closeBrowser, parseArgs, outputJSON, outputError } from './lib/browser.js';
+import { launchChrome, createPage, closeChrome, outputJSON, outputError } from './lib/cdp.js';
+import yargs from 'yargs';
+import { hideBin } from 'yargs/helpers';
+
+const argv = yargs(hideBin(process.argv))
+  .option('selector', {
+    type: 'string',
+    description: 'CSS selector of element to click',
+    demandOption: true
+  })
+  .option('url', {
+    type: 'string',
+    description: 'URL to navigate to before clicking'
+  })
+  .option('headless', {
+    type: 'boolean',
+    description: 'Run in headless mode',
+    default: true
+  })
+  .option('wait-until', {
+    type: 'string',
+    description: 'Wait until event',
+    default: 'load'
+  })
+  .option('close', {
+    type: 'boolean',
+    description: 'Close browser after click',
+    default: true
+  })
+  .help()
+  .argv;
 
 async function click() {
-  const args = parseArgs(process.argv.slice(2));
-
-  if (!args.selector) {
-    outputError(new Error('--selector is required'));
-    return;
-  }
-
   try {
-    const browser = await getBrowser({
-      headless: args.headless !== 'false'
+    // Launch Chrome
+    await launchChrome({
+      headless: argv.headless
     });
 
-    const page = await getPage(browser);
+    // Create page
+    const page = await createPage({
+      viewport: { width: 1920, height: 1080 }
+    });
 
     // Navigate if URL provided
-    if (args.url) {
-      await page.goto(args.url, {
-        waitUntil: args['wait-until'] || 'networkidle2'
+    if (argv.url) {
+      await page.navigate(argv.url, {
+        waitUntil: argv['wait-until']
       });
     }
-
-    // Wait for element
-    await page.waitForSelector(args.selector, {
-      visible: true,
-      timeout: parseInt(args.timeout || '5000')
-    });
 
     // Click element
-    await page.click(args.selector);
+    await page.click(argv.selector);
 
-    // Wait for optional selector after click
-    if (args['wait-for']) {
-      await page.waitForSelector(args['wait-for'], {
-        timeout: parseInt(args.timeout || '5000')
-      });
-    } else {
-      // Wait for navigation or timeout
-      try {
-        await page.waitForNavigation({
-          waitUntil: 'networkidle2',
-          timeout: 2000
-        });
-      } catch (e) {
-        // Ignore timeout - no navigation occurred
-      }
-    }
+    const url = await page.evaluate('window.location.href');
 
-    outputJSON({
+    const result = {
       success: true,
-      url: page.url(),
-      title: await page.title()
-    });
+      selector: argv.selector,
+      url
+    };
 
-    if (args.close !== 'false') {
-      await closeBrowser();
+    outputJSON(result);
+
+    if (argv.close) {
+      await closeChrome();
     }
   } catch (error) {
     outputError(error);

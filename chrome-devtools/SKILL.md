@@ -1,12 +1,12 @@
 ---
 name: chrome-devtools
-description: Browser automation, debugging, and performance analysis using Puppeteer CLI scripts. Use for automating browsers, taking screenshots, analyzing performance, monitoring network traffic, web scraping, form automation, and JavaScript debugging.
+description: Browser automation, debugging, and performance analysis using pure Chrome DevTools Protocol (CDP). Use for automating browsers, taking screenshots, analyzing performance, monitoring network traffic, web scraping, form automation, and JavaScript debugging without high-level libraries.
 license: Apache-2.0
 ---
 
-# Chrome DevTools Agent Skill
+# Chrome DevTools Protocol (CDP) Skill
 
-Browser automation via executable Puppeteer scripts. All scripts output JSON for easy parsing.
+Browser automation via pure Chrome DevTools Protocol - direct WebSocket communication with Chrome. No Puppeteer, no Playwright - just raw CDP for maximum control and performance. All scripts output JSON for easy parsing.
 
 ## Quick Start
 
@@ -28,7 +28,8 @@ Supports: Ubuntu, Debian, Fedora, RHEL, CentOS, Arch, Manjaro
 #### Step 2: Install Node Dependencies
 
 ```bash
-npm install  # Installs puppeteer, debug, yargs
+cd .claude/skills/chrome-devtools/scripts
+npm install  # Installs chrome-launcher, ws (WebSocket), debug, yargs
 ```
 
 ### Test
@@ -56,6 +57,11 @@ All scripts are in `.claude/skills/chrome-devtools/scripts/`
 - `console.js` - Monitor console messages/errors
 - `network.js` - Track HTTP requests/responses
 - `performance.js` - Measure Core Web Vitals + record traces
+
+### Advanced CDP Features
+- `profile.js` - CPU and memory profiling
+- `coverage.js` - JavaScript and CSS code coverage analysis
+- `emulate.js` - Device and network emulation (mobile, tablet, 3G, 4G)
 
 ## Usage Patterns
 
@@ -158,7 +164,7 @@ node snapshot.js --url https://example.com | jq '.elements[] | {tagName, text, s
 
 ### Common Errors
 
-**"Cannot find package 'puppeteer'"**
+**"Cannot find package 'chrome-launcher'"**
 - Run: `npm install` in the scripts directory
 
 **"error while loading shared libraries: libnss3.so"** (Linux/WSL)
@@ -172,8 +178,9 @@ node snapshot.js --url https://example.com | jq '.elements[] | {tagName, text, s
 - Try: `npm rebuild` then `npm install`
 
 **Chrome not found**
-- Puppeteer auto-downloads Chrome during `npm install`
-- If failed, manually trigger: `npx puppeteer browsers install chrome`
+- chrome-launcher will use system Chrome if available
+- Install Chrome manually: https://www.google.com/chrome/
+- On Linux: `sudo apt-get install chromium-browser` or `google-chrome-stable`
 
 ### Script Issues
 
@@ -194,29 +201,71 @@ node snapshot.js --url https://example.com | jq '.elements[] | {tagName, text, s
 ## Reference Documentation
 
 Detailed guides available in `./references/`:
-- [CDP Domains Reference](./references/cdp-domains.md) - 47 Chrome DevTools Protocol domains
-- [Puppeteer Quick Reference](./references/puppeteer-reference.md) - Complete Puppeteer API patterns
+- [CDP Quick Reference](./references/cdp-quick-reference.md) - Common CDP patterns and examples
+- [CDP Domains Reference](./references/cdp-domains.md) - All 47 Chrome DevTools Protocol domains
 - [Performance Analysis Guide](./references/performance-guide.md) - Core Web Vitals optimization
 
 ## Advanced Usage
 
 ### Custom Scripts
-Create custom scripts using shared library:
+Create custom scripts using the CDP library:
 ```javascript
-import { getBrowser, getPage, closeBrowser, outputJSON } from './lib/browser.js';
-// Your automation logic
+import { launchChrome, createPage, closeChrome, outputJSON } from './lib/cdp.js';
+
+async function myScript() {
+  await launchChrome({ headless: true });
+  const page = await createPage();
+
+  // Use page methods or direct CDP
+  await page.navigate('https://example.com');
+
+  // Direct CDP access via page.client
+  await page.client.send('Emulation.setCPUThrottlingRate', { rate: 4 });
+
+  await closeChrome();
+}
 ```
 
-### Direct CDP Access
+### Pure CDP Access
+All scripts use pure Chrome DevTools Protocol via WebSocket:
 ```javascript
-const client = await page.createCDPSession();
-await client.send('Emulation.setCPUThrottlingRate', { rate: 4 });
+import { launchChrome, createCDPClient } from './lib/cdp.js';
+
+const chrome = await launchChrome();
+const { client, target } = await createCDPClient();
+
+// Send CDP commands directly
+await client.send('Page.navigate', { url: 'https://example.com' });
+await client.send('Page.captureScreenshot', { format: 'png' });
+
+// Listen to CDP events
+client.on('Network.responseReceived', (params) => {
+  console.log('Response:', params.response.url);
+});
 ```
 
 See reference documentation for advanced patterns and complete API coverage.
 
+## Why Pure CDP?
+
+**Advantages over Puppeteer/Playwright:**
+- **Zero abstraction overhead** - Direct WebSocket communication with Chrome
+- **Smaller footprint** - No large libraries, just chrome-launcher and ws
+- **Maximum control** - Access to all 47 CDP domains and 1000+ commands
+- **Better debugging** - See exactly what's being sent to Chrome
+- **Future-proof** - CDP is the official protocol, won't be deprecated
+- **Flexibility** - Easily customize and extend for specific needs
+
+**Use cases:**
+- Performance-critical automation
+- Advanced debugging scenarios
+- Custom browser instrumentation
+- Learning CDP fundamentals
+- Building your own automation framework
+
 ## External Resources
 
-- [Puppeteer Documentation](https://pptr.dev/)
-- [Chrome DevTools Protocol](https://chromedevtools.github.io/devtools-protocol/)
+- [Chrome DevTools Protocol](https://chromedevtools.github.io/devtools-protocol/) - Official CDP documentation
+- [CDP Viewer](https://chromedevtools.github.io/devtools-protocol/tot/) - Interactive protocol reference
+- [chrome-launcher](https://github.com/GoogleChrome/chrome-launcher) - Launch Chrome from Node.js
 - [Scripts README](./scripts/README.md)

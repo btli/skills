@@ -1,11 +1,12 @@
 {
   "name": "chrome-devtools-scripts",
-  "version": "1.0.0",
-  "description": "Browser automation scripts for Chrome DevTools Agent Skill",
+  "version": "2.0.0",
+  "description": "Pure Chrome DevTools Protocol (CDP) automation scripts",
   "type": "module",
   "scripts": {},
   "dependencies": {
-    "puppeteer": "^24.15.0",
+    "chrome-launcher": "^1.1.2",
+    "ws": "^8.18.0",
     "debug": "^4.4.0",
     "yargs": "^17.7.2"
   },
