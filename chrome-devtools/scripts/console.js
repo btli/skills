@@ -1,71 +1,102 @@
 #!/usr/bin/env node
 /**
- * Monitor console messages
+ * Console monitoring using pure Chrome DevTools Protocol
  * Usage: node console.js --url https://example.com [--types error,warn] [--duration 5000]
  */
-import { getBrowser, getPage, closeBrowser, parseArgs, outputJSON, outputError } from './lib/browser.js';
+import { launchChrome, createPage, closeChrome, outputJSON, outputError } from './lib/cdp.js';
+import yargs from 'yargs';
+import { hideBin } from 'yargs/helpers';
+
+const argv = yargs(hideBin(process.argv))
+  .option('url', {
+    type: 'string',
+    description: 'URL to monitor',
+    demandOption: true
+  })
+  .option('types', {
+    type: 'string',
+    description: 'Comma-separated console message types to capture (log,info,warn,error)'
+  })
+  .option('duration', {
+    type: 'number',
+    description: 'Duration to monitor in milliseconds',
+    default: 5000
+  })
+  .option('headless', {
+    type: 'boolean',
+    description: 'Run in headless mode',
+    default: true
+  })
+  .option('close', {
+    type: 'boolean',
+    description: 'Close browser after monitoring',
+    default: true
+  })
+  .help()
+  .argv;
 
 async function monitorConsole() {
-  const args = parseArgs(process.argv.slice(2));
-
-  if (!args.url) {
-    outputError(new Error('--url is required'));
-    return;
-  }
-
   try {
-    const browser = await getBrowser({
-      headless: args.headless !== 'false'
+    // Launch Chrome
+    await launchChrome({
+      headless: argv.headless
     });
 
-    const page = await getPage(browser);
+    // Create page
+    const page = await createPage({
+      viewport: { width: 1920, height: 1080 }
+    });
 
     const messages = [];
-    const filterTypes = args.types ? args.types.split(',') : null;
+    const filterTypes = argv.types ? argv.types.split(',') : null;
 
-    // Listen for console messages
-    page.on('console', (msg) => {
-      const type = msg.type();
-
-      if (!filterTypes || filterTypes.includes(type)) {
+    // Listen for console API calls
+    page.client.on('Runtime.consoleAPICalled', (params) => {
+      if (!filterTypes || filterTypes.includes(params.type)) {
         messages.push({
-          type: type,
-          text: msg.text(),
-          location: msg.location(),
-          timestamp: Date.now()
+          type: params.type,
+          args: params.args.map(arg => arg.value || arg.description),
+          stackTrace: params.stackTrace,
+          timestamp: params.timestamp
         });
       }
     });
 
-    // Listen for page errors
-    page.on('pageerror', (error) => {
+    // Listen for exceptions
+    page.client.on('Runtime.exceptionThrown', (params) => {
       messages.push({
-        type: 'pageerror',
-        text: error.message,
-        stack: error.stack,
-        timestamp: Date.now()
+        type: 'exception',
+        text: params.exceptionDetails.text,
+        exception: params.exceptionDetails.exception,
+        stackTrace: params.exceptionDetails.stackTrace,
+        timestamp: params.timestamp
       });
     });
 
     // Navigate
-    await page.goto(args.url, {
-      waitUntil: args['wait-until'] || 'networkidle2'
-    });
+    await page.navigate(argv.url, { waitUntil: 'load' });
 
-    // Wait for additional time if specified
-    if (args.duration) {
-      await new Promise(resolve => setTimeout(resolve, parseInt(args.duration)));
-    }
+    // Wait for additional time
+    await new Promise(resolve => setTimeout(resolve, argv.duration));
 
-    outputJSON({
+    const url = await page.evaluate('window.location.href');
+
+    const result = {
       success: true,
-      url: page.url(),
+      url,
       messageCount: messages.length,
-      messages: messages
-    });
+      messages,
+      summary: messages.reduce((acc, msg) => {
+        acc[msg.type] = (acc[msg.type] || 0) + 1;
+        return acc;
+      }, {}),
+      timestamp: new Date().toISOString()
+    };
 
-    if (args.close !== 'false') {
-      await closeBrowser();
+    outputJSON(result);
+
+    if (argv.close) {
+      await closeChrome();
     }
   } catch (error) {
     outputError(error);
