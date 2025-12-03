@@ -1,12 +1,12 @@
 ---
 name: plane-project-management
 description: |
-  Interact with Plane project management via REST API for issue tracking, project planning, and sprint management. This skill should be used when: (1) working in a project directory that needs task tracking, (2) creating implementation plans with trackable issues, (3) managing sprints/cycles and modules, (4) updating issue status as work progresses, (5) querying project status and metrics. Credentials are stored in ~/.claude/.env.
+  Interact with Plane project management via REST API for issue tracking, project planning, sprint management, time tracking, initiatives, and documentation. This skill should be used when: (1) working in a project directory that needs task tracking, (2) creating implementation plans with trackable issues, (3) managing sprints/cycles and modules, (4) updating issue status as work progresses, (5) logging time spent on tasks, (6) managing cross-project initiatives, (7) creating project documentation pages. Credentials are stored in ~/.claude/.env.
 ---
 
 # Plane Project Management Skill
 
-Manage projects, issues, cycles, and modules in Plane via the REST API.
+Manage projects, issues, cycles, modules, pages, initiatives, and time tracking in Plane via the REST API.
 
 ## Configuration
 
@@ -33,20 +33,15 @@ curl -H "X-API-Key: $PLANE_API_KEY" "$PLANE_API_URL/api/v1/..."
 
 All endpoints follow: `$PLANE_API_URL/api/v1/workspaces/{workspace_slug}/...`
 
-## Core Operations
+---
+
+## Projects
 
 ### List Projects
 
 ```bash
 curl -s -H "X-API-Key: $PLANE_API_KEY" \
   "$PLANE_API_URL/api/v1/workspaces/$PLANE_WORKSPACE/projects/" | jq '.results[]'
-```
-
-### Get Project Details
-
-```bash
-curl -s -H "X-API-Key: $PLANE_API_KEY" \
-  "$PLANE_API_URL/api/v1/workspaces/$PLANE_WORKSPACE/projects/{project_id}/"
 ```
 
 ### Create Project
@@ -60,6 +55,27 @@ curl -s -X POST -H "X-API-Key: $PLANE_API_KEY" -H "Content-Type: application/jso
     "description": "Project description"
   }'
 ```
+
+### Get/Update/Delete Project
+
+```bash
+# Get
+curl -s -H "X-API-Key: $PLANE_API_KEY" \
+  "$PLANE_API_URL/api/v1/workspaces/$PLANE_WORKSPACE/projects/{project_id}/"
+
+# Update
+curl -s -X PATCH -H "X-API-Key: $PLANE_API_KEY" -H "Content-Type: application/json" \
+  "$PLANE_API_URL/api/v1/workspaces/$PLANE_WORKSPACE/projects/{project_id}/" \
+  -d '{"name": "New Name"}'
+
+# Delete
+curl -s -X DELETE -H "X-API-Key: $PLANE_API_KEY" \
+  "$PLANE_API_URL/api/v1/workspaces/$PLANE_WORKSPACE/projects/{project_id}/"
+```
+
+---
+
+## Issues (Work Items)
 
 ### List Issues
 
@@ -112,14 +128,30 @@ curl -s -X DELETE -H "X-API-Key: $PLANE_API_KEY" \
   "$PLANE_API_URL/api/v1/workspaces/$PLANE_WORKSPACE/projects/{project_id}/issues/{issue_id}/"
 ```
 
-### List States (Workflow)
+---
+
+## States (Workflow)
+
+### List States
 
 ```bash
 curl -s -H "X-API-Key: $PLANE_API_KEY" \
   "$PLANE_API_URL/api/v1/workspaces/$PLANE_WORKSPACE/projects/{project_id}/states/" | jq '.results[]'
 ```
 
-Default state groups: `backlog`, `unstarted`, `started`, `completed`, `cancelled`
+**Default state groups:** `backlog`, `unstarted`, `started`, `completed`, `cancelled`
+
+### Create State
+
+```bash
+curl -s -X POST -H "X-API-Key: $PLANE_API_KEY" -H "Content-Type: application/json" \
+  "$PLANE_API_URL/api/v1/workspaces/$PLANE_WORKSPACE/projects/{project_id}/states/" \
+  -d '{"name": "In Review", "color": "#8B5CF6", "group": "started"}'
+```
+
+---
+
+## Labels
 
 ### List Labels
 
@@ -136,7 +168,13 @@ curl -s -X POST -H "X-API-Key: $PLANE_API_KEY" -H "Content-Type: application/jso
   -d '{"name": "bug", "color": "#FF0000"}'
 ```
 
-### List Cycles (Sprints)
+---
+
+## Cycles (Sprints)
+
+Time-boxed iterations for sprint planning.
+
+### List Cycles
 
 ```bash
 curl -s -H "X-API-Key: $PLANE_API_KEY" \
@@ -150,18 +188,74 @@ curl -s -X POST -H "X-API-Key: $PLANE_API_KEY" -H "Content-Type: application/jso
   "$PLANE_API_URL/api/v1/workspaces/$PLANE_WORKSPACE/projects/{project_id}/cycles/" \
   -d '{
     "name": "Sprint 1",
+    "description": "First sprint",
     "start_date": "2025-01-01",
     "end_date": "2025-01-14"
   }'
 ```
 
-### Add Issues to Cycle
+**Cycle Fields:**
+- `name` (required): Cycle name
+- `description`: Optional description
+- `start_date`, `end_date`: Date boundaries (YYYY-MM-DD)
+- `owned_by`: Cycle owner UUID
+
+### Update/Delete Cycle
 
 ```bash
-curl -s -X POST -H "X-API-Key: $PLANE_API_KEY" -H "Content-Type: application/json" \
-  "$PLANE_API_URL/api/v1/workspaces/$PLANE_WORKSPACE/projects/{project_id}/cycles/{cycle_id}/cycle-issues/" \
-  -d '{"issues": ["{issue_id_1}", "{issue_id_2}"]}'
+# Update
+curl -s -X PATCH -H "X-API-Key: $PLANE_API_KEY" -H "Content-Type: application/json" \
+  "$PLANE_API_URL/api/v1/workspaces/$PLANE_WORKSPACE/projects/{project_id}/cycles/{cycle_id}/" \
+  -d '{"name": "Sprint 1 - Extended"}'
+
+# Delete
+curl -s -X DELETE -H "X-API-Key: $PLANE_API_KEY" \
+  "$PLANE_API_URL/api/v1/workspaces/$PLANE_WORKSPACE/projects/{project_id}/cycles/{cycle_id}/"
 ```
+
+### Add/Remove Work Items to Cycle
+
+```bash
+# Add work items
+curl -s -X POST -H "X-API-Key: $PLANE_API_KEY" -H "Content-Type: application/json" \
+  "$PLANE_API_URL/api/v1/workspaces/$PLANE_WORKSPACE/projects/{project_id}/cycles/{cycle_id}/work-items/" \
+  -d '{"issues": ["{issue_id_1}", "{issue_id_2}"]}'
+
+# List cycle work items
+curl -s -H "X-API-Key: $PLANE_API_KEY" \
+  "$PLANE_API_URL/api/v1/workspaces/$PLANE_WORKSPACE/projects/{project_id}/cycles/{cycle_id}/work-items/"
+
+# Remove work item
+curl -s -X DELETE -H "X-API-Key: $PLANE_API_KEY" \
+  "$PLANE_API_URL/api/v1/workspaces/$PLANE_WORKSPACE/projects/{project_id}/cycles/{cycle_id}/work-items/{work_item_id}/"
+
+# Transfer work items to another cycle
+curl -s -X POST -H "X-API-Key: $PLANE_API_KEY" -H "Content-Type: application/json" \
+  "$PLANE_API_URL/api/v1/workspaces/$PLANE_WORKSPACE/projects/{project_id}/cycles/{cycle_id}/transfer-work-items/" \
+  -d '{"new_cycle_id": "{target_cycle_id}"}'
+```
+
+### Archive/Restore Cycle
+
+```bash
+# Archive
+curl -s -X POST -H "X-API-Key: $PLANE_API_KEY" \
+  "$PLANE_API_URL/api/v1/workspaces/$PLANE_WORKSPACE/projects/{project_id}/cycles/{cycle_id}/archive/"
+
+# List archived
+curl -s -H "X-API-Key: $PLANE_API_KEY" \
+  "$PLANE_API_URL/api/v1/workspaces/$PLANE_WORKSPACE/projects/{project_id}/cycles/archived/"
+
+# Restore
+curl -s -X DELETE -H "X-API-Key: $PLANE_API_KEY" \
+  "$PLANE_API_URL/api/v1/workspaces/$PLANE_WORKSPACE/projects/{project_id}/cycles/{cycle_id}/archive/"
+```
+
+---
+
+## Modules
+
+Group related features or functionality.
 
 ### List Modules
 
@@ -178,18 +272,307 @@ curl -s -X POST -H "X-API-Key: $PLANE_API_KEY" -H "Content-Type: application/jso
   -d '{
     "name": "Authentication Module",
     "description": "User auth features",
+    "status": "planned",
     "start_date": "2025-01-01",
-    "target_date": "2025-02-01"
+    "target_date": "2025-02-01",
+    "lead": "{user_id}",
+    "members": ["{user_id_1}", "{user_id_2}"]
   }'
 ```
 
-### Add Issues to Module
+**Module Status Values:** `backlog`, `planned`, `in-progress`, `paused`, `completed`, `cancelled`
+
+### Add/Remove Work Items to Module
+
+```bash
+# Add work items
+curl -s -X POST -H "X-API-Key: $PLANE_API_KEY" -H "Content-Type: application/json" \
+  "$PLANE_API_URL/api/v1/workspaces/$PLANE_WORKSPACE/projects/{project_id}/modules/{module_id}/work-items/" \
+  -d '{"issues": ["{issue_id_1}", "{issue_id_2}"]}'
+
+# List module work items
+curl -s -H "X-API-Key: $PLANE_API_KEY" \
+  "$PLANE_API_URL/api/v1/workspaces/$PLANE_WORKSPACE/projects/{project_id}/modules/{module_id}/work-items/"
+
+# Remove work item
+curl -s -X DELETE -H "X-API-Key: $PLANE_API_KEY" \
+  "$PLANE_API_URL/api/v1/workspaces/$PLANE_WORKSPACE/projects/{project_id}/modules/{module_id}/work-items/{work_item_id}/"
+```
+
+### Archive/Restore Module
+
+```bash
+# Archive
+curl -s -X POST -H "X-API-Key: $PLANE_API_KEY" \
+  "$PLANE_API_URL/api/v1/workspaces/$PLANE_WORKSPACE/projects/{project_id}/modules/{module_id}/archive/"
+
+# List archived
+curl -s -H "X-API-Key: $PLANE_API_KEY" \
+  "$PLANE_API_URL/api/v1/workspaces/$PLANE_WORKSPACE/projects/{project_id}/modules/archived/"
+
+# Restore (note: unarchive endpoint)
+curl -s -X DELETE -H "X-API-Key: $PLANE_API_KEY" \
+  "$PLANE_API_URL/api/v1/workspaces/$PLANE_WORKSPACE/projects/{project_id}/modules/{module_id}/unarchive/"
+```
+
+---
+
+## Initiatives
+
+Cross-project strategic objectives at the workspace level.
+
+### List Initiatives
+
+```bash
+curl -s -H "X-API-Key: $PLANE_API_KEY" \
+  "$PLANE_API_URL/api/v1/workspaces/$PLANE_WORKSPACE/initiatives/"
+```
+
+### Create Initiative
 
 ```bash
 curl -s -X POST -H "X-API-Key: $PLANE_API_KEY" -H "Content-Type: application/json" \
-  "$PLANE_API_URL/api/v1/workspaces/$PLANE_WORKSPACE/projects/{project_id}/modules/{module_id}/module-issues/" \
-  -d '{"issues": ["{issue_id_1}", "{issue_id_2}"]}'
+  "$PLANE_API_URL/api/v1/workspaces/$PLANE_WORKSPACE/initiatives/" \
+  -d '{
+    "name": "Q1 2025 Product Launch",
+    "description_html": "<p>Launch new product features</p>",
+    "lead": "{user_id}",
+    "start_date": "2025-01-01",
+    "end_date": "2025-03-31",
+    "state": "PLANNED"
+  }'
 ```
+
+**Initiative State Values:** `DRAFT`, `PLANNED`, `ACTIVE`, `COMPLETED`, `CLOSED`
+
+### Update/Delete Initiative
+
+```bash
+# Update
+curl -s -X PATCH -H "X-API-Key: $PLANE_API_KEY" -H "Content-Type: application/json" \
+  "$PLANE_API_URL/api/v1/workspaces/$PLANE_WORKSPACE/initiatives/{initiative_id}/" \
+  -d '{"state": "ACTIVE"}'
+
+# Delete
+curl -s -X DELETE -H "X-API-Key: $PLANE_API_KEY" \
+  "$PLANE_API_URL/api/v1/workspaces/$PLANE_WORKSPACE/initiatives/{initiative_id}/"
+```
+
+---
+
+## Pages (Documentation)
+
+Create documentation at workspace or project level.
+
+### Workspace Pages (Wiki)
+
+```bash
+# Create wiki page
+curl -s -X POST -H "X-API-Key: $PLANE_API_KEY" -H "Content-Type: application/json" \
+  "$PLANE_API_URL/api/v1/workspaces/$PLANE_WORKSPACE/pages/" \
+  -d '{
+    "name": "Architecture Overview",
+    "description_html": "<h1>System Architecture</h1><p>Documentation content...</p>"
+  }'
+
+# Get wiki page
+curl -s -H "X-API-Key: $PLANE_API_KEY" \
+  "$PLANE_API_URL/api/v1/workspaces/$PLANE_WORKSPACE/pages/{page_id}/"
+```
+
+### Project Pages
+
+```bash
+# Create project page
+curl -s -X POST -H "X-API-Key: $PLANE_API_KEY" -H "Content-Type: application/json" \
+  "$PLANE_API_URL/api/v1/workspaces/$PLANE_WORKSPACE/projects/{project_id}/pages/" \
+  -d '{
+    "name": "API Documentation",
+    "description_html": "<h1>API Reference</h1><p>Endpoint documentation...</p>"
+  }'
+
+# Get project page
+curl -s -H "X-API-Key: $PLANE_API_KEY" \
+  "$PLANE_API_URL/api/v1/workspaces/$PLANE_WORKSPACE/projects/{project_id}/pages/{page_id}/"
+```
+
+---
+
+## Time Tracking (Worklogs)
+
+Log time spent on work items.
+
+### Create Worklog
+
+```bash
+curl -s -X POST -H "X-API-Key: $PLANE_API_KEY" -H "Content-Type: application/json" \
+  "$PLANE_API_URL/api/v1/workspaces/$PLANE_WORKSPACE/projects/{project_id}/work-items/{work_item_id}/worklogs/" \
+  -d '{
+    "duration": 3600,
+    "description": "Implemented authentication flow"
+  }'
+```
+
+**Duration is in seconds** (3600 = 1 hour)
+
+### List Worklogs
+
+```bash
+curl -s -H "X-API-Key: $PLANE_API_KEY" \
+  "$PLANE_API_URL/api/v1/workspaces/$PLANE_WORKSPACE/projects/{project_id}/work-items/{work_item_id}/worklogs/"
+```
+
+### Get Total Time
+
+```bash
+curl -s -H "X-API-Key: $PLANE_API_KEY" \
+  "$PLANE_API_URL/api/v1/workspaces/$PLANE_WORKSPACE/projects/{project_id}/work-items/{work_item_id}/worklogs/total-time/"
+```
+
+### Update/Delete Worklog
+
+```bash
+# Update
+curl -s -X PATCH -H "X-API-Key: $PLANE_API_KEY" -H "Content-Type: application/json" \
+  "$PLANE_API_URL/api/v1/workspaces/$PLANE_WORKSPACE/projects/{project_id}/work-items/{work_item_id}/worklogs/{worklog_id}/" \
+  -d '{"duration": 7200}'
+
+# Delete
+curl -s -X DELETE -H "X-API-Key: $PLANE_API_KEY" \
+  "$PLANE_API_URL/api/v1/workspaces/$PLANE_WORKSPACE/projects/{project_id}/work-items/{work_item_id}/worklogs/{worklog_id}/"
+```
+
+---
+
+## Intake (Incoming Requests)
+
+Manage incoming requests that can be converted to work items.
+
+### List Intake Issues
+
+```bash
+curl -s -H "X-API-Key: $PLANE_API_KEY" \
+  "$PLANE_API_URL/api/v1/workspaces/$PLANE_WORKSPACE/projects/{project_id}/intake-issues/"
+```
+
+### Create Intake Issue
+
+```bash
+curl -s -X POST -H "X-API-Key: $PLANE_API_KEY" -H "Content-Type: application/json" \
+  "$PLANE_API_URL/api/v1/workspaces/$PLANE_WORKSPACE/projects/{project_id}/intake-issues/" \
+  -d '{
+    "name": "Feature Request: Dark Mode",
+    "description_html": "<p>User requested dark mode support</p>"
+  }'
+```
+
+### Update/Delete Intake Issue
+
+```bash
+# Update
+curl -s -X PATCH -H "X-API-Key: $PLANE_API_KEY" -H "Content-Type: application/json" \
+  "$PLANE_API_URL/api/v1/workspaces/$PLANE_WORKSPACE/projects/{project_id}/intake-issues/{intake_issue_id}/" \
+  -d '{"name": "Updated request title"}'
+
+# Delete
+curl -s -X DELETE -H "X-API-Key: $PLANE_API_KEY" \
+  "$PLANE_API_URL/api/v1/workspaces/$PLANE_WORKSPACE/projects/{project_id}/intake-issues/{intake_issue_id}/"
+```
+
+---
+
+## Comments
+
+Add comments to work items.
+
+### List Comments
+
+```bash
+curl -s -H "X-API-Key: $PLANE_API_KEY" \
+  "$PLANE_API_URL/api/v1/workspaces/$PLANE_WORKSPACE/projects/{project_id}/work-items/{work_item_id}/comments/"
+```
+
+### Create Comment
+
+```bash
+curl -s -X POST -H "X-API-Key: $PLANE_API_KEY" -H "Content-Type: application/json" \
+  "$PLANE_API_URL/api/v1/workspaces/$PLANE_WORKSPACE/projects/{project_id}/work-items/{work_item_id}/comments/" \
+  -d '{
+    "comment_html": "<p>This is a comment with <strong>formatting</strong></p>"
+  }'
+```
+
+### Update/Delete Comment
+
+```bash
+# Update
+curl -s -X PATCH -H "X-API-Key: $PLANE_API_KEY" -H "Content-Type: application/json" \
+  "$PLANE_API_URL/api/v1/workspaces/$PLANE_WORKSPACE/projects/{project_id}/work-items/{work_item_id}/comments/{comment_id}/" \
+  -d '{"comment_html": "<p>Updated comment</p>"}'
+
+# Delete
+curl -s -X DELETE -H "X-API-Key: $PLANE_API_KEY" \
+  "$PLANE_API_URL/api/v1/workspaces/$PLANE_WORKSPACE/projects/{project_id}/work-items/{work_item_id}/comments/{comment_id}/"
+```
+
+---
+
+## Links
+
+Attach external references to work items.
+
+### List Links
+
+```bash
+curl -s -H "X-API-Key: $PLANE_API_KEY" \
+  "$PLANE_API_URL/api/v1/workspaces/$PLANE_WORKSPACE/projects/{project_id}/work-items/{work_item_id}/links/"
+```
+
+### Create Link
+
+```bash
+curl -s -X POST -H "X-API-Key: $PLANE_API_KEY" -H "Content-Type: application/json" \
+  "$PLANE_API_URL/api/v1/workspaces/$PLANE_WORKSPACE/projects/{project_id}/work-items/{work_item_id}/links/" \
+  -d '{
+    "title": "Design Document",
+    "url": "https://figma.com/file/xxx"
+  }'
+```
+
+### Update/Delete Link
+
+```bash
+# Update
+curl -s -X PATCH -H "X-API-Key: $PLANE_API_KEY" -H "Content-Type: application/json" \
+  "$PLANE_API_URL/api/v1/workspaces/$PLANE_WORKSPACE/projects/{project_id}/work-items/{work_item_id}/links/{link_id}/" \
+  -d '{"title": "Updated title"}'
+
+# Delete
+curl -s -X DELETE -H "X-API-Key: $PLANE_API_KEY" \
+  "$PLANE_API_URL/api/v1/workspaces/$PLANE_WORKSPACE/projects/{project_id}/work-items/{work_item_id}/links/{link_id}/"
+```
+
+---
+
+## Activity
+
+View work item activity history.
+
+### List Activities
+
+```bash
+curl -s -H "X-API-Key: $PLANE_API_KEY" \
+  "$PLANE_API_URL/api/v1/workspaces/$PLANE_WORKSPACE/projects/{project_id}/work-items/{work_item_id}/activities/"
+```
+
+### Get Activity Detail
+
+```bash
+curl -s -H "X-API-Key: $PLANE_API_KEY" \
+  "$PLANE_API_URL/api/v1/workspaces/$PLANE_WORKSPACE/projects/{project_id}/work-items/{work_item_id}/activities/{activity_id}/"
+```
+
+---
 
 ## Response Pagination
 
@@ -207,6 +590,8 @@ API responses use cursor-based pagination:
 
 To paginate, add `?cursor={next_cursor}` to the request.
 
+---
+
 ## Project Planning Workflow
 
 When starting work in a new project directory:
@@ -221,32 +606,33 @@ When starting work in a new project directory:
 5. **Create labels** for categorization: `feature`, `bug`, `tech-debt`, `documentation`, `testing`
 6. **Set up modules** for major feature areas
 7. **Create initial cycle/sprint** if using time-boxed iterations
+8. **Create initiative** if part of larger cross-project effort
+9. **Create pages** for technical documentation
+
+---
 
 ## Issue Tracking During Development
 
 When working on tasks:
 
 1. **Before starting work**: Move issue to "In Progress" state
-2. **Reference issues in commits**: Include `[PROJ-{sequence_id}]` in commit messages
-3. **After completing work**: Move issue to "Done" state
-4. **For blockers**: Add comments or create linked blocking issues
+2. **Log time**: Create worklogs for time spent
+3. **Add comments**: Document decisions and blockers
+4. **Reference issues in commits**: Include `[PROJ-{sequence_id}]` in commit messages
+5. **After completing work**: Move issue to "Done" state
+6. **For blockers**: Add comments or create linked blocking issues
+
+---
 
 ## Helper: Get State ID by Name
 
 ```bash
-# Get the "In Progress" state ID
 STATE_ID=$(curl -s -H "X-API-Key: $PLANE_API_KEY" \
   "$PLANE_API_URL/api/v1/workspaces/$PLANE_WORKSPACE/projects/{project_id}/states/" \
   | jq -r '.results[] | select(.name=="In Progress") | .id')
 ```
 
-## Helper: Create Issue and Get ID
-
-```bash
-ISSUE_ID=$(curl -s -X POST -H "X-API-Key: $PLANE_API_KEY" -H "Content-Type: application/json" \
-  "$PLANE_API_URL/api/v1/workspaces/$PLANE_WORKSPACE/projects/{project_id}/issues/" \
-  -d '{"name": "Issue title"}' | jq -r '.id')
-```
+---
 
 ## Rate Limiting
 
@@ -255,9 +641,8 @@ API is rate-limited to 60 requests per minute. Check `X-RateLimit-Remaining` hea
 ## Error Handling
 
 Common error responses:
+- `400`: Bad request (invalid data)
 - `401`: Invalid API key
 - `403`: Insufficient permissions
 - `404`: Resource not found
 - `429`: Rate limit exceeded
-
-Always check response status and handle errors appropriately.

@@ -20,52 +20,111 @@ All workspace-scoped endpoints follow:
 /api/v1/workspaces/{workspace_slug}/...
 ```
 
-### Projects
+---
+
+## Projects
 - `GET /projects/` - List all projects
 - `POST /projects/` - Create project
 - `GET /projects/{id}/` - Get project
 - `PATCH /projects/{id}/` - Update project
 - `DELETE /projects/{id}/` - Delete project
 
-### Issues (Work Items)
+## Issues (Work Items)
 - `GET /projects/{project_id}/issues/` - List issues
 - `POST /projects/{project_id}/issues/` - Create issue
 - `GET /projects/{project_id}/issues/{id}/` - Get issue
 - `PATCH /projects/{project_id}/issues/{id}/` - Update issue
 - `DELETE /projects/{project_id}/issues/{id}/` - Delete issue
 
-### States
+## States
 - `GET /projects/{project_id}/states/` - List states
 - `POST /projects/{project_id}/states/` - Create state
 - `PATCH /projects/{project_id}/states/{id}/` - Update state
 - `DELETE /projects/{project_id}/states/{id}/` - Delete state
 
-### Labels
+## Labels
 - `GET /projects/{project_id}/labels/` - List labels
 - `POST /projects/{project_id}/labels/` - Create label
 - `PATCH /projects/{project_id}/labels/{id}/` - Update label
 - `DELETE /projects/{project_id}/labels/{id}/` - Delete label
 
-### Cycles (Sprints)
+## Cycles (Sprints)
 - `GET /projects/{project_id}/cycles/` - List cycles
 - `POST /projects/{project_id}/cycles/` - Create cycle
 - `GET /projects/{project_id}/cycles/{id}/` - Get cycle
 - `PATCH /projects/{project_id}/cycles/{id}/` - Update cycle
 - `DELETE /projects/{project_id}/cycles/{id}/` - Delete cycle
-- `POST /projects/{project_id}/cycles/{id}/cycle-issues/` - Add issues to cycle
+- `GET /projects/{project_id}/cycles/archived/` - List archived cycles
+- `POST /projects/{project_id}/cycles/{id}/archive/` - Archive cycle
+- `DELETE /projects/{project_id}/cycles/{id}/archive/` - Restore cycle
+- `POST /projects/{project_id}/cycles/{id}/work-items/` - Add work items
+- `GET /projects/{project_id}/cycles/{id}/work-items/` - List cycle work items
+- `DELETE /projects/{project_id}/cycles/{id}/work-items/{work_item_id}/` - Remove work item
+- `POST /projects/{project_id}/cycles/{id}/transfer-work-items/` - Transfer work items
 
-### Modules
+## Modules
 - `GET /projects/{project_id}/modules/` - List modules
 - `POST /projects/{project_id}/modules/` - Create module
 - `GET /projects/{project_id}/modules/{id}/` - Get module
 - `PATCH /projects/{project_id}/modules/{id}/` - Update module
 - `DELETE /projects/{project_id}/modules/{id}/` - Delete module
-- `POST /projects/{project_id}/modules/{id}/module-issues/` - Add issues to module
+- `GET /projects/{project_id}/modules/archived/` - List archived modules
+- `POST /projects/{project_id}/modules/{id}/archive/` - Archive module
+- `DELETE /projects/{project_id}/modules/{id}/unarchive/` - Restore module
+- `POST /projects/{project_id}/modules/{id}/work-items/` - Add work items
+- `GET /projects/{project_id}/modules/{id}/work-items/` - List module work items
+- `DELETE /projects/{project_id}/modules/{id}/work-items/{work_item_id}/` - Remove work item
 
-### Links
-- `GET /projects/{project_id}/issues/{issue_id}/links/` - List links
-- `POST /projects/{project_id}/issues/{issue_id}/links/` - Create link
-- `DELETE /projects/{project_id}/issues/{issue_id}/links/{id}/` - Delete link
+## Initiatives (Workspace Level)
+- `GET /initiatives/` - List initiatives
+- `POST /initiatives/` - Create initiative
+- `GET /initiatives/{id}/` - Get initiative
+- `PATCH /initiatives/{id}/` - Update initiative
+- `DELETE /initiatives/{id}/` - Delete initiative
+
+## Pages (Documentation)
+
+### Workspace Pages (Wiki)
+- `POST /pages/` - Create wiki page
+- `GET /pages/{id}/` - Get wiki page
+
+### Project Pages
+- `POST /projects/{project_id}/pages/` - Create project page
+- `GET /projects/{project_id}/pages/{id}/` - Get project page
+
+## Time Tracking (Worklogs)
+- `POST /projects/{project_id}/work-items/{work_item_id}/worklogs/` - Create worklog
+- `GET /projects/{project_id}/work-items/{work_item_id}/worklogs/` - List worklogs
+- `GET /projects/{project_id}/work-items/{work_item_id}/worklogs/total-time/` - Get total time
+- `PATCH /projects/{project_id}/work-items/{work_item_id}/worklogs/{id}/` - Update worklog
+- `DELETE /projects/{project_id}/work-items/{work_item_id}/worklogs/{id}/` - Delete worklog
+
+## Intake (Incoming Requests)
+- `GET /projects/{project_id}/intake-issues/` - List intake issues
+- `POST /projects/{project_id}/intake-issues/` - Create intake issue
+- `GET /projects/{project_id}/intake-issues/{id}/` - Get intake issue
+- `PATCH /projects/{project_id}/intake-issues/{id}/` - Update intake issue
+- `DELETE /projects/{project_id}/intake-issues/{id}/` - Delete intake issue
+
+## Comments
+- `GET /projects/{project_id}/work-items/{work_item_id}/comments/` - List comments
+- `POST /projects/{project_id}/work-items/{work_item_id}/comments/` - Create comment
+- `GET /projects/{project_id}/work-items/{work_item_id}/comments/{id}/` - Get comment
+- `PATCH /projects/{project_id}/work-items/{work_item_id}/comments/{id}/` - Update comment
+- `DELETE /projects/{project_id}/work-items/{work_item_id}/comments/{id}/` - Delete comment
+
+## Links
+- `GET /projects/{project_id}/work-items/{work_item_id}/links/` - List links
+- `POST /projects/{project_id}/work-items/{work_item_id}/links/` - Create link
+- `GET /projects/{project_id}/work-items/{work_item_id}/links/{id}/` - Get link
+- `PATCH /projects/{project_id}/work-items/{work_item_id}/links/{id}/` - Update link
+- `DELETE /projects/{project_id}/work-items/{work_item_id}/links/{id}/` - Delete link
+
+## Activity
+- `GET /projects/{project_id}/work-items/{work_item_id}/activities/` - List activities
+- `GET /projects/{project_id}/work-items/{work_item_id}/activities/{id}/` - Get activity
+
+---
 
 ## Response Format
 
@@ -99,26 +158,46 @@ All list endpoints return paginated responses:
 - Check `X-RateLimit-Remaining` header
 - 429 status when exceeded
 
-## State Groups
+---
 
-Default state groups (cannot be changed):
+## Field Values Reference
+
+### State Groups
 - `backlog` - Items not yet planned
 - `unstarted` - Planned but not started
 - `started` - Work in progress
 - `completed` - Done
 - `cancelled` - Won't do
 
-## Priority Values
-
+### Priority Values
 - `urgent` - Critical, immediate attention
 - `high` - Important
 - `medium` - Normal priority
 - `low` - Can wait
 - `none` - No priority set
 
-## Date Formats
+### Module Status Values
+- `backlog`
+- `planned`
+- `in-progress`
+- `paused`
+- `completed`
+- `cancelled`
 
+### Initiative State Values
+- `DRAFT`
+- `PLANNED`
+- `ACTIVE`
+- `COMPLETED`
+- `CLOSED`
+
+### Date Formats
 All dates use ISO 8601 format: `YYYY-MM-DD`
+
+### Time Duration
+Worklogs use seconds (3600 = 1 hour)
+
+---
 
 ## Common Errors
 
