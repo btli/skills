@@ -409,36 +409,76 @@ curl -s -X DELETE -H "X-API-Key: $PLANE_API_KEY" \
 
 Create documentation at workspace or project level.
 
+**Page Fields:**
+- `name`: Page title
+- `description_html`: HTML content (e.g., `<p>Content</p>`)
+- `access`: `0` = private, `1` = public (default: 0)
+- `color`: Optional color code
+- `parent`: Parent page UUID (for nested pages)
+- `is_locked`: Boolean to prevent editing
+
+### List Project Pages
+
+```bash
+# List all pages in a project (requires session auth, no /v1)
+curl -b /tmp/plane_cookies.txt \
+  "$PLANE_API_URL/api/workspaces/$PLANE_WORKSPACE/projects/{project_id}/pages/"
+```
+
+### Create Project Page
+
+```bash
+# Create a blank page (minimal - returns page with ID)
+curl -b /tmp/plane_cookies.txt -X POST \
+  -H "Content-Type: application/json" \
+  "$PLANE_API_URL/api/workspaces/$PLANE_WORKSPACE/projects/{project_id}/pages/" \
+  -d '{"access": 0}'
+
+# Create page with content
+curl -b /tmp/plane_cookies.txt -X POST \
+  -H "Content-Type: application/json" \
+  "$PLANE_API_URL/api/workspaces/$PLANE_WORKSPACE/projects/{project_id}/pages/" \
+  -d '{
+    "name": "API Documentation",
+    "description_html": "<h1>API Reference</h1><p>Endpoint documentation...</p>",
+    "access": 0
+  }'
+```
+
+### Get/Update/Delete Project Page
+
+```bash
+# Get page
+curl -b /tmp/plane_cookies.txt \
+  "$PLANE_API_URL/api/workspaces/$PLANE_WORKSPACE/projects/{project_id}/pages/{page_id}/"
+
+# Update page
+curl -b /tmp/plane_cookies.txt -X PATCH \
+  -H "Content-Type: application/json" \
+  "$PLANE_API_URL/api/workspaces/$PLANE_WORKSPACE/projects/{project_id}/pages/{page_id}/" \
+  -d '{"name": "Updated Title", "description_html": "<p>New content</p>"}'
+
+# Delete page
+curl -b /tmp/plane_cookies.txt -X DELETE \
+  "$PLANE_API_URL/api/workspaces/$PLANE_WORKSPACE/projects/{project_id}/pages/{page_id}/"
+```
+
 ### Workspace Pages (Wiki)
 
 ```bash
 # Create wiki page
-curl -s -X POST -H "X-API-Key: $PLANE_API_KEY" -H "Content-Type: application/json" \
+curl -b /tmp/plane_cookies.txt -X POST \
+  -H "Content-Type: application/json" \
   "$PLANE_API_URL/api/workspaces/$PLANE_WORKSPACE/pages/" \
   -d '{
     "name": "Architecture Overview",
-    "description_html": "<h1>System Architecture</h1><p>Documentation content...</p>"
+    "description_html": "<h1>System Architecture</h1><p>Documentation content...</p>",
+    "access": 0
   }'
 
 # Get wiki page
-curl -s -H "X-API-Key: $PLANE_API_KEY" \
+curl -b /tmp/plane_cookies.txt \
   "$PLANE_API_URL/api/workspaces/$PLANE_WORKSPACE/pages/{page_id}/"
-```
-
-### Project Pages
-
-```bash
-# Create project page
-curl -s -X POST -H "X-API-Key: $PLANE_API_KEY" -H "Content-Type: application/json" \
-  "$PLANE_API_URL/api/workspaces/$PLANE_WORKSPACE/projects/{project_id}/pages/" \
-  -d '{
-    "name": "API Documentation",
-    "description_html": "<h1>API Reference</h1><p>Endpoint documentation...</p>"
-  }'
-
-# Get project page
-curl -s -H "X-API-Key: $PLANE_API_KEY" \
-  "$PLANE_API_URL/api/workspaces/$PLANE_WORKSPACE/projects/{project_id}/pages/{page_id}/"
 ```
 
 ---
