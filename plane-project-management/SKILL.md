@@ -39,25 +39,33 @@ curl -H "X-API-Key: $PLANE_API_KEY" "$PLANE_API_URL/api/v1/workspaces/..."
 
 ### Method 2: Session-Based (Self-Hosted Only)
 
-For self-hosted Plane instances, you can authenticate via username/password using CSRF tokens:
+For self-hosted Plane instances, you can authenticate via username/password using CSRF tokens and form-encoded data:
 
 ```bash
-# Step 1: Get CSRF token and initial cookie
+# Step 1: Get CSRF token (sets csrftoken cookie and returns token in JSON)
 curl -c cookies.txt "$PLANE_API_URL/auth/get-csrf-token/" \
   -H "Accept: application/json"
 
-# Step 2: Extract CSRF token from cookies
+# Step 2: Extract CSRF token from cookie file
 CSRF_TOKEN=$(grep csrftoken cookies.txt | awk '{print $7}')
 
-# Step 3: Sign in with credentials
-curl -b cookies.txt -c cookies.txt -X POST "$PLANE_API_URL/api/v1/sign-in/" \
-  -H "Content-Type: application/json" \
-  -H "X-CSRFToken: $CSRF_TOKEN" \
-  -d '{"email": "'"$PLANE_USERNAME"'", "password": "'"$PLANE_PASSWORD"'"}'
+# Step 3: Sign in with form-urlencoded data (NOT JSON!)
+# Note: The sign-in endpoint expects application/x-www-form-urlencoded
+curl -b cookies.txt -c cookies.txt -X POST "$PLANE_API_URL/auth/sign-in/" \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -H "Origin: $PLANE_API_URL" \
+  -H "Referer: $PLANE_API_URL/" \
+  -d "csrfmiddlewaretoken=$CSRF_TOKEN&email=$(python3 -c "import urllib.parse; print(urllib.parse.quote('$PLANE_USERNAME'))")&password=$(python3 -c "import urllib.parse; print(urllib.parse.quote('$PLANE_PASSWORD'))")"
 
-# Step 4: Use session cookie for subsequent requests (no /v1 prefix)
+# Step 4: Use session cookie for subsequent requests (no /v1 prefix!)
 curl -b cookies.txt "$PLANE_API_URL/api/workspaces/$PLANE_WORKSPACE/projects/"
 ```
+
+**Important notes:**
+- Sign-in uses `application/x-www-form-urlencoded`, NOT JSON
+- The CSRF token must be included in the form body as `csrfmiddlewaretoken`
+- Email and password must be URL-encoded (special characters like `@` become `%40`)
+- Successful login returns HTTP 302 redirect and sets session cookies
 
 **Key difference:** Session-based requests use `/api/workspaces/...` (no `/v1` prefix), while API key requests use `/api/v1/workspaces/...`.
 

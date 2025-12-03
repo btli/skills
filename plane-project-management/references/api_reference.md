@@ -19,23 +19,30 @@ Generate tokens at: Profile Settings > API Tokens
 
 ### Method 2: Session-Based (Self-Hosted)
 
-For self-hosted instances, authenticate via CSRF token + credentials:
+For self-hosted instances, authenticate via CSRF token + form-encoded credentials:
 
 ```bash
 # 1. Get CSRF token
 curl -c cookies.txt "$PLANE_API_URL/auth/get-csrf-token/" -H "Accept: application/json"
 
-# 2. Extract token
+# 2. Extract token from cookies
 CSRF_TOKEN=$(grep csrftoken cookies.txt | awk '{print $7}')
 
-# 3. Sign in
-curl -b cookies.txt -c cookies.txt -X POST "$PLANE_API_URL/api/v1/sign-in/" \
-  -H "Content-Type: application/json" -H "X-CSRFToken: $CSRF_TOKEN" \
-  -d '{"email": "user@example.com", "password": "password"}'
+# 3. Sign in with form-urlencoded data (NOT JSON!)
+curl -b cookies.txt -c cookies.txt -X POST "$PLANE_API_URL/auth/sign-in/" \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -H "Origin: $PLANE_API_URL" \
+  -d "csrfmiddlewaretoken=$CSRF_TOKEN&email=user%40example.com&password=yourpassword"
 
 # 4. Use session cookie (no /v1 prefix)
 curl -b cookies.txt "$PLANE_API_URL/api/workspaces/{workspace}/projects/"
 ```
+
+**Important:**
+- Sign-in uses `application/x-www-form-urlencoded`, NOT JSON
+- Include `csrfmiddlewaretoken` in form body
+- URL-encode email/password (@ becomes %40, etc.)
+- Successful login returns HTTP 302 redirect
 
 **Session-based uses `/api/` prefix (no v1).**
 
