@@ -5,19 +5,45 @@ Full API documentation: https://planesoftwareinc.mintlify.app/api-reference/intr
 ## Base URL
 
 Self-hosted: Use `$PLANE_API_URL` from `~/.claude/.env`
-Cloud: `https://api.plane.so/api/v1/`
+Cloud: `https://api.plane.so/api/`
 
 ## Authentication
 
-All requests require the `X-API-Key` header with a valid API token.
+### Method 1: API Key (Public API)
+
+All public API requests require the `X-API-Key` header with a valid API token.
 
 Generate tokens at: Profile Settings > API Tokens
+
+**Public API uses `/api/v1/` prefix.**
+
+### Method 2: Session-Based (Self-Hosted)
+
+For self-hosted instances, authenticate via CSRF token + credentials:
+
+```bash
+# 1. Get CSRF token
+curl -c cookies.txt "$PLANE_API_URL/auth/get-csrf-token/" -H "Accept: application/json"
+
+# 2. Extract token
+CSRF_TOKEN=$(grep csrftoken cookies.txt | awk '{print $7}')
+
+# 3. Sign in
+curl -b cookies.txt -c cookies.txt -X POST "$PLANE_API_URL/api/v1/sign-in/" \
+  -H "Content-Type: application/json" -H "X-CSRFToken: $CSRF_TOKEN" \
+  -d '{"email": "user@example.com", "password": "password"}'
+
+# 4. Use session cookie (no /v1 prefix)
+curl -b cookies.txt "$PLANE_API_URL/api/workspaces/{workspace}/projects/"
+```
+
+**Session-based uses `/api/` prefix (no v1).**
 
 ## Endpoint Patterns
 
 All workspace-scoped endpoints follow:
 ```
-/api/v1/workspaces/{workspace_slug}/...
+/api/workspaces/{workspace_slug}/...
 ```
 
 ---
