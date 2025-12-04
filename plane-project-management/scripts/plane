@@ -3,9 +3,13 @@
 # Optimized for minimal API calls using caching
 #
 # Usage:
-#   plane <command> [args]
+#   plane [-w WORKSPACE] <command> [args]
+#
+# Options:
+#   -w WORKSPACE    Specify workspace slug (or set PLANE_WORKSPACE env var)
 #
 # Commands:
+#   workspaces                - List available workspaces
 #   status [PROJECT]          - Show project status summary
 #   todo [PROJECT]            - List todo items
 #   doing [PROJECT]           - List in-progress items
@@ -14,6 +18,7 @@
 #   finish PROJECT SEQ        - Move to Done
 #   stop PROJECT SEQ          - Move back to Todo
 #   new PROJECT "NAME"        - Create issue
+#   project-new "NAME" "ID" ["DESC"] - Create new project
 #   comment PROJECT SEQ "MSG" - Add comment to issue
 #   show PROJECT SEQ          - Show issue details with comments
 #   cycles PROJECT            - List cycles
@@ -47,8 +52,25 @@ if command -v phase &> /dev/null; then
     export PLANE_PASSWORD=$(phase_get PLANE_PASSWORD)
 fi
 
-# Set defaults
-PLANE_WORKSPACE="${PLANE_WORKSPACE:-kaelyn-ai}"
+# Parse options
+while getopts "w:" opt; do
+    case $opt in
+        w) PLANE_WORKSPACE="$OPTARG" ;;
+        *) ;;
+    esac
+done
+shift $((OPTIND-1))
+
+# Check if workspace is required (not needed for 'workspaces' or 'help' commands)
+cmd_check="$1"
+if [ -z "$PLANE_WORKSPACE" ] && [ "$cmd_check" != "workspaces" ] && [ "$cmd_check" != "help" ] && [ "$cmd_check" != "h" ] && [ -n "$cmd_check" ]; then
+    echo "Error: No workspace specified."
+    echo "Use: plane -w WORKSPACE <command>"
+    echo "  or: export PLANE_WORKSPACE=your-workspace"
+    echo ""
+    echo "To list available workspaces: plane workspaces"
+    exit 1
+fi
 
 # Ensure cache dir
 mkdir -p "$CACHE_DIR"
@@ -294,6 +316,41 @@ create_page() {
     echo "Created page: $page_name"
 }
 
+list_workspaces() {
+    ensure_session
+    curl -s -b "$COOKIE_FILE" \
+        "$PLANE_API_URL/api/users/me/workspaces/" | \
+        python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+workspaces = data if isinstance(data, list) else data.get('results', [])
+print('Available workspaces:')
+for w in workspaces:
+    slug = w.get('slug', '?')
+    name = w.get('name', '?')
+    print(f'  {slug:20} {name}')"
+}
+
+create_project() {
+    local name="$1"
+    local identifier="$2"
+    local description="${3:-}"
+
+    local result=$(curl -s -X POST -H "X-API-Key: $PLANE_API_KEY" -H "Content-Type: application/json" \
+        "$PLANE_API_URL/api/v1/workspaces/$PLANE_WORKSPACE/projects/" \
+        -d "{\"name\": \"$name\", \"identifier\": \"$identifier\", \"description\": \"$description\"}")
+
+    local proj_id=$(echo "$result" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('identifier', d.get('error', '?')))" 2>/dev/null)
+
+    if echo "$result" | grep -q "error"; then
+        echo "Error: $(echo "$result" | python3 -c "import sys,json; print(json.load(sys.stdin).get('error', 'Unknown error'))" 2>/dev/null)"
+    else
+        echo "Created project: $proj_id"
+        # Clear project cache
+        rm -f "$CACHE_DIR/projects.json"
+    fi
+}
+
 show_issue() {
     local project="$1"
     local seq_id="$2"
@@ -394,6 +451,7 @@ cmd="$1"
 shift
 
 case "$cmd" in
+    workspaces) list_workspaces ;;
     status|s)   show_status "$1" ;;
     todo|t)     list_issues_by_state "$1" "unstarted" ;;
     doing|d)    list_issues_by_state "$1" "started" ;;
@@ -403,6 +461,7 @@ case "$cmd" in
     finish|f)   move_issue "$1" "$2" "Done" ;;
     stop)       move_issue "$1" "$2" "Todo" ;;
     new|n)      create_issue "$1" "$2" "${3:-none}" ;;
+    project-new) create_project "$1" "$2" "$3" ;;
     show)       show_issue "$1" "$2" ;;
     comment)    add_comment "$1" "$2" "$3" ;;
     cycles|c)   list_cycles "$1" ;;
@@ -410,9 +469,11 @@ case "$cmd" in
     page-new)   create_page "$1" "$2" "$3" ;;
     refresh|r)  rm -rf "$CACHE_DIR"/* "$COOKIE_FILE"; echo "Cache cleared" ;;
     help|h|"")
-        echo "plane <cmd> [args]"
+        echo "plane [-w WORKSPACE] <cmd> [args]"
         echo ""
-        echo "  status [PROJECT]     Project summary"
+        echo "  workspaces           List available workspaces"
+        echo "  status [PROJECT]     Project summary (lists projects if no arg)"
+        echo ""
         echo "  todo PROJECT         Todo items"
         echo "  doing PROJECT        In-progress items"
         echo "  done PROJECT         Completed items"
@@ -423,6 +484,7 @@ case "$cmd" in
         echo "  stop PROJECT SEQ     Move back to Todo"
         echo ""
         echo "  new PROJECT NAME     Create issue"
+        echo "  project-new NAME ID [DESC]  Create new project"
         echo "  show PROJECT SEQ     Show issue details + comments"
         echo "  comment PROJECT SEQ MSG  Add comment to issue"
         echo ""
@@ -431,6 +493,8 @@ case "$cmd" in
         echo "  page-new PROJECT NAME [HTML]  Create page"
         echo ""
         echo "  refresh              Clear cache"
+        echo ""
+        echo "Set workspace: -w WORKSPACE or export PLANE_WORKSPACE=..."
         ;;
     *)
         echo "Unknown: $cmd (try 'plane help')"
