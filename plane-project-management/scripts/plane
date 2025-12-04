@@ -1,0 +1,310 @@
+#!/bin/bash
+# Plane CLI - Single command interface for all Plane operations
+# Optimized for minimal API calls using caching
+#
+# Usage:
+#   plane <command> [args]
+#
+# Commands:
+#   status [PROJECT]          - Show project status summary
+#   todo [PROJECT]            - List todo items
+#   doing [PROJECT]           - List in-progress items
+#   done [PROJECT]            - List completed items
+#   start PROJECT SEQ         - Move to In Progress
+#   finish PROJECT SEQ        - Move to Done
+#   new PROJECT "NAME"        - Create issue
+#   cycles PROJECT            - List cycles
+#   pages PROJECT             - List pages
+#   refresh                   - Clear cache
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CACHE_DIR="/tmp/plane_cache"
+COOKIE_FILE="/tmp/plane_cookies.txt"
+
+# Load environment from ~/.claude/.env (non-secret values)
+if [ -f ~/.claude/.env ]; then
+    while IFS='=' read -r key value; do
+        [[ "$key" =~ ^#.*$ ]] && continue
+        [[ -z "$key" ]] && continue
+        value="${value%\'}"
+        value="${value#\'}"
+        export "$key=$value"
+    done < ~/.claude/.env
+fi
+
+# Load secrets from Phase (if available)
+phase_get() {
+    phase secrets get "$1" --app claude-code 2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin).get('value',''))" 2>/dev/null
+}
+
+if command -v phase &> /dev/null; then
+    export PLANE_API_KEY=$(phase_get PLANE_API_KEY)
+    export PLANE_USERNAME=$(phase_get PLANE_USERNAME)
+    export PLANE_PASSWORD=$(phase_get PLANE_PASSWORD)
+fi
+
+# Set defaults
+PLANE_WORKSPACE="${PLANE_WORKSPACE:-kaelyn-ai}"
+
+# Ensure cache dir
+mkdir -p "$CACHE_DIR"
+
+# =============================================================================
+# CACHING FUNCTIONS
+# =============================================================================
+
+cache_valid() {
+    local file="$1"
+    local ttl="${2:-3600}"
+    [ -f "$file" ] && [ $(($(date +%s) - $(stat -f %m "$file" 2>/dev/null || stat -c %Y "$file" 2>/dev/null))) -lt "$ttl" ]
+}
+
+get_projects() {
+    local cache="$CACHE_DIR/projects.json"
+    if ! cache_valid "$cache"; then
+        curl -s -H "X-API-Key: $PLANE_API_KEY" \
+            "$PLANE_API_URL/api/v1/workspaces/$PLANE_WORKSPACE/projects/" > "$cache"
+    fi
+    cat "$cache"
+}
+
+get_project_id() {
+    local identifier="$1"
+    get_projects | python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+for p in data.get('results', []):
+    if p['identifier'] == '$identifier':
+        print(p['id'])
+        break"
+}
+
+get_states() {
+    local project_id="$1"
+    local cache="$CACHE_DIR/states_${project_id}.json"
+    if ! cache_valid "$cache"; then
+        curl -s -H "X-API-Key: $PLANE_API_KEY" \
+            "$PLANE_API_URL/api/v1/workspaces/$PLANE_WORKSPACE/projects/$project_id/states/" > "$cache"
+    fi
+    cat "$cache"
+}
+
+get_state_id() {
+    local project_id="$1"
+    local state_name="$2"
+    get_states "$project_id" | python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+for s in data.get('results', []):
+    if s['name'].lower() == '$state_name'.lower():
+        print(s['id'])
+        break"
+}
+
+ensure_session() {
+    if cache_valid "$COOKIE_FILE" 1800; then
+        return 0
+    fi
+
+    local csrf_response=$(curl -s -c "$COOKIE_FILE" "$PLANE_API_URL/auth/get-csrf-token/")
+    local csrf_token=$(echo "$csrf_response" | python3 -c "import sys, json; print(json.load(sys.stdin).get('csrf_token',''))" 2>/dev/null)
+
+    curl -s -c "$COOKIE_FILE" -b "$COOKIE_FILE" -X POST "$PLANE_API_URL/auth/sign-in/" \
+        -H "Content-Type: application/x-www-form-urlencoded" \
+        -H "Origin: $PLANE_API_URL" \
+        --data-urlencode "csrfmiddlewaretoken=$csrf_token" \
+        --data-urlencode "email=$PLANE_USERNAME" \
+        --data-urlencode "password=$PLANE_PASSWORD" >/dev/null 2>&1
+}
+
+get_issues() {
+    local project_id="$1"
+    ensure_session
+    curl -s -b "$COOKIE_FILE" \
+        "$PLANE_API_URL/api/workspaces/$PLANE_WORKSPACE/projects/$project_id/issues/"
+}
+
+# =============================================================================
+# DISPLAY FUNCTIONS
+# =============================================================================
+
+list_issues_by_state() {
+    local project="$1"
+    local state_group="$2"
+    local project_id=$(get_project_id "$project")
+
+    if [ -z "$project_id" ]; then
+        echo "Project '$project' not found"
+        return 1
+    fi
+
+    get_issues "$project_id" | python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+results = data.get('results', []) if isinstance(data, dict) else data
+state_group = '$state_group'
+for issue in results:
+    if state_group and issue.get('state__group') != state_group:
+        continue
+    seq = issue['sequence_id']
+    pri = issue.get('priority', 'none')[:1].upper()
+    name = issue['name'][:60]
+    print(f'{seq:3} [{pri}] {name}')"
+}
+
+show_status() {
+    local project="$1"
+
+    if [ -z "$project" ]; then
+        # Show all projects summary
+        echo "Projects:"
+        get_projects | python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+for p in data.get('results', []):
+    print(f\"  {p['identifier']:6} {p['name']}\")"
+        return
+    fi
+
+    local project_id=$(get_project_id "$project")
+    if [ -z "$project_id" ]; then
+        echo "Project '$project' not found"
+        return 1
+    fi
+
+    echo "$project Status:"
+    get_issues "$project_id" | python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+results = data.get('results', []) if isinstance(data, dict) else data
+counts = {'backlog': 0, 'unstarted': 0, 'started': 0, 'completed': 0}
+for issue in results:
+    group = issue.get('state__group', 'backlog')
+    if group in counts:
+        counts[group] += 1
+print(f\"  Backlog:     {counts['backlog']}\")
+print(f\"  Todo:        {counts['unstarted']}\")
+print(f\"  In Progress: {counts['started']}\")
+print(f\"  Done:        {counts['completed']}\")"
+}
+
+# =============================================================================
+# ACTION FUNCTIONS
+# =============================================================================
+
+move_issue() {
+    local project="$1"
+    local seq_id="$2"
+    local target_state="$3"
+
+    local project_id=$(get_project_id "$project")
+    local state_id=$(get_state_id "$project_id" "$target_state")
+
+    # Get issue ID by sequence
+    local issue_id=$(curl -s -H "X-API-Key: $PLANE_API_KEY" \
+        "$PLANE_API_URL/api/v1/workspaces/$PLANE_WORKSPACE/projects/$project_id/issues/" | \
+        python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+for issue in data.get('results', []):
+    if issue['sequence_id'] == $seq_id:
+        print(issue['id'])
+        break")
+
+    if [ -z "$issue_id" ]; then
+        echo "Issue $project-$seq_id not found"
+        return 1
+    fi
+
+    curl -s -X PATCH -H "X-API-Key: $PLANE_API_KEY" -H "Content-Type: application/json" \
+        "$PLANE_API_URL/api/v1/workspaces/$PLANE_WORKSPACE/projects/$project_id/issues/$issue_id/" \
+        -d "{\"state\": \"$state_id\"}" >/dev/null
+
+    echo "$project-$seq_id -> $target_state"
+}
+
+create_issue() {
+    local project="$1"
+    local name="$2"
+    local priority="${3:-none}"
+
+    local project_id=$(get_project_id "$project")
+
+    local result=$(curl -s -X POST -H "X-API-Key: $PLANE_API_KEY" -H "Content-Type: application/json" \
+        "$PLANE_API_URL/api/v1/workspaces/$PLANE_WORKSPACE/projects/$project_id/issues/" \
+        -d "{\"name\": \"$name\", \"priority\": \"$priority\"}")
+
+    local seq_id=$(echo "$result" | python3 -c "import sys,json; print(json.load(sys.stdin).get('sequence_id','?'))" 2>/dev/null)
+    echo "Created: $project-$seq_id"
+}
+
+list_cycles() {
+    local project="$1"
+    local project_id=$(get_project_id "$project")
+    ensure_session
+
+    curl -s -b "$COOKIE_FILE" \
+        "$PLANE_API_URL/api/workspaces/$PLANE_WORKSPACE/projects/$project_id/cycles/" | \
+        python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+cycles = data if isinstance(data, list) else data.get('results', [])
+for c in cycles:
+    status = c.get('status', '?')
+    start = c.get('start_date', '')[:10]
+    end = c.get('end_date', '')[:10]
+    print(f\"{c['name']}: {status} ({start} - {end})\")"
+}
+
+list_pages() {
+    local project="$1"
+    local project_id=$(get_project_id "$project")
+    ensure_session
+
+    curl -s -b "$COOKIE_FILE" \
+        "$PLANE_API_URL/api/workspaces/$PLANE_WORKSPACE/projects/$project_id/pages/" | \
+        python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+pages = data if isinstance(data, list) else data.get('results', [])
+for p in pages:
+    print(f\"{p['name']}\")"
+}
+
+# =============================================================================
+# MAIN
+# =============================================================================
+
+cmd="$1"
+shift
+
+case "$cmd" in
+    status|s)   show_status "$1" ;;
+    todo|t)     list_issues_by_state "$1" "unstarted" ;;
+    doing|d)    list_issues_by_state "$1" "started" ;;
+    done)       list_issues_by_state "$1" "completed" ;;
+    backlog|b)  list_issues_by_state "$1" "backlog" ;;
+    start)      move_issue "$1" "$2" "In Progress" ;;
+    finish|f)   move_issue "$1" "$2" "Done" ;;
+    new|n)      create_issue "$1" "$2" "${3:-none}" ;;
+    cycles|c)   list_cycles "$1" ;;
+    pages|p)    list_pages "$1" ;;
+    refresh|r)  rm -rf "$CACHE_DIR"/* "$COOKIE_FILE"; echo "Cache cleared" ;;
+    help|h|"")
+        echo "plane <cmd> [args]"
+        echo ""
+        echo "  status [PROJECT]     Project summary"
+        echo "  todo PROJECT         Todo items"
+        echo "  doing PROJECT        In-progress items"
+        echo "  start PROJECT SEQ    Start working"
+        echo "  finish PROJECT SEQ   Mark done"
+        echo "  new PROJECT NAME     Create issue"
+        echo "  cycles PROJECT       List cycles"
+        echo "  pages PROJECT        List pages"
+        echo "  refresh              Clear cache"
+        ;;
+    *)
+        echo "Unknown: $cmd (try 'plane help')"
+        exit 1
+        ;;
+esac
