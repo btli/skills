@@ -83,7 +83,7 @@ plane_update_issue_state() {
     local issue_id="$2"
     local state_id="$3"
 
-    plane_api PATCH "/projects/$project_id/issues/$issue_id/" "{\"state\": \"$state_id\"}"
+    plane_api PATCH "/projects/$project_id/issues/$issue_id/" "{\"state_id\": \"$state_id\"}"
 }
 
 # Get states for a project

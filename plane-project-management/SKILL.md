@@ -138,7 +138,7 @@ curl -s -X POST -H "X-API-Key: $PLANE_API_KEY" -H "Content-Type: application/jso
     "name": "Issue title",
     "description_html": "<p>Issue description with HTML formatting</p>",
     "priority": "high",
-    "state": "{state_id}",
+    "state_id": "{state_uuid}",
     "assignees": ["{user_id}"],
     "labels": ["{label_id}"],
     "start_date": "2025-01-01",
@@ -150,7 +150,7 @@ curl -s -X POST -H "X-API-Key: $PLANE_API_KEY" -H "Content-Type: application/jso
 - `name` (required): Issue title
 - `description_html`: HTML-formatted description
 - `priority`: `urgent`, `high`, `medium`, `low`, `none`
-- `state`: State UUID (get from states endpoint)
+- `state_id`: State UUID (get from states endpoint)
 - `assignees`: Array of user UUIDs
 - `labels`: Array of label UUIDs
 - `parent`: Parent issue UUID (for sub-issues)
@@ -163,7 +163,7 @@ curl -s -X POST -H "X-API-Key: $PLANE_API_KEY" -H "Content-Type: application/jso
 ```bash
 curl -s -X PATCH -H "X-API-Key: $PLANE_API_KEY" -H "Content-Type: application/json" \
   "$PLANE_API_URL/api/workspaces/$PLANE_WORKSPACE/projects/{project_id}/issues/{issue_id}/" \
-  -d '{"state": "{new_state_id}", "priority": "medium"}'
+  -d '{"state_id": "{new_state_uuid}", "priority": "medium"}'
 ```
 
 ### Delete Issue
