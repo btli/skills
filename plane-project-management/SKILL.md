@@ -23,15 +23,32 @@ export PATH="$PATH:~/.claude/skills/plane-project-management/scripts"
 ### Basic Commands
 
 ```bash
+# Project status
 plane status              # List all projects
 plane status AI           # Show AI project summary
+
+# View issues by state
 plane todo AI             # List todo items
 plane doing AI            # List in-progress items
+plane done AI             # List completed items
+plane backlog AI          # List backlog items
+
+# State transitions
 plane start AI 5          # Move AI-5 to In Progress
 plane finish AI 5         # Move AI-5 to Done
+plane stop AI 5           # Move AI-5 back to Todo
+
+# Issue management
 plane new AI "Fix bug"    # Create new issue
+plane show AI 5           # Show issue details + comments
+plane comment AI 5 "msg"  # Add comment to AI-5
+
+# Cycles and Pages
 plane cycles AI           # List cycles
 plane pages AI            # List pages
+plane page-new AI "Name" "<h1>Content</h1>"  # Create page
+
+# Maintenance
 plane refresh             # Clear cache
 ```
 
@@ -417,6 +434,18 @@ curl -s -X POST -b /tmp/plane_cookies.txt -H "Content-Type: application/json" \
 
 # From markdown file
 ./plane_pages.sh from-file AI ./docs/api.md
+```
+
+### Add Developer Notes/Comments
+```bash
+# View issue with existing comments
+plane show AI 5
+
+# Add progress update
+plane comment AI 5 "Implemented the core parser logic. Still need to add error handling."
+
+# Add completion note
+plane comment AI 5 "Added error handling and unit tests. Ready for review."
 ```
 
 ### Reference Issues in Commits

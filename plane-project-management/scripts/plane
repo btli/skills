@@ -12,9 +12,13 @@
 #   done [PROJECT]            - List completed items
 #   start PROJECT SEQ         - Move to In Progress
 #   finish PROJECT SEQ        - Move to Done
+#   stop PROJECT SEQ          - Move back to Todo
 #   new PROJECT "NAME"        - Create issue
+#   comment PROJECT SEQ "MSG" - Add comment to issue
+#   show PROJECT SEQ          - Show issue details with comments
 #   cycles PROJECT            - List cycles
 #   pages PROJECT             - List pages
+#   page-new PROJECT "NAME" ["HTML"] - Create new page
 #   refresh                   - Clear cache
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -271,6 +275,117 @@ for p in pages:
     print(f\"{p['name']}\")"
 }
 
+create_page() {
+    local project="$1"
+    local name="$2"
+    local content="${3:-<p>New page</p>}"
+
+    local project_id=$(get_project_id "$project")
+    ensure_session
+
+    # Escape content for JSON
+    local escaped_content=$(echo "$content" | python3 -c "import sys,json; print(json.dumps(sys.stdin.read().strip()))")
+
+    local result=$(curl -s -X POST -b "$COOKIE_FILE" -H "Content-Type: application/json" \
+        "$PLANE_API_URL/api/workspaces/$PLANE_WORKSPACE/projects/$project_id/pages/" \
+        -d "{\"name\": \"$name\", \"description_html\": $escaped_content, \"access\": 0}")
+
+    local page_name=$(echo "$result" | python3 -c "import sys,json; print(json.load(sys.stdin).get('name','?'))" 2>/dev/null)
+    echo "Created page: $page_name"
+}
+
+show_issue() {
+    local project="$1"
+    local seq_id="$2"
+
+    local project_id=$(get_project_id "$project")
+    ensure_session
+
+    # Get issue details (use session API for state__group)
+    local issue_data=$(curl -s -b "$COOKIE_FILE" \
+        "$PLANE_API_URL/api/workspaces/$PLANE_WORKSPACE/projects/$project_id/issues/" | \
+        python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+results = data.get('results', []) if isinstance(data, dict) else data
+for issue in results:
+    if issue['sequence_id'] == $seq_id:
+        print(json.dumps(issue))
+        break")
+
+    if [ -z "$issue_data" ]; then
+        echo "Issue $project-$seq_id not found"
+        return 1
+    fi
+
+    local issue_id=$(echo "$issue_data" | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")
+
+    # Display issue details
+    echo "$issue_data" | python3 -c "
+import sys, json
+issue = json.load(sys.stdin)
+print(f\"$project-{issue['sequence_id']}: {issue['name']}\")
+print(f\"Priority: {issue.get('priority', 'none')}\")
+print(f\"State: {issue.get('state__group', 'unknown')}\")
+desc = issue.get('description_stripped', '')
+if desc:
+    print(f\"\\nDescription:\\n{desc[:500]}\")"
+
+    # Get comments
+    echo ""
+    echo "Comments:"
+    ensure_session
+    curl -s -b "$COOKIE_FILE" \
+        "$PLANE_API_URL/api/workspaces/$PLANE_WORKSPACE/projects/$project_id/issues/$issue_id/comments/" | \
+        python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+comments = data if isinstance(data, list) else data.get('results', [])
+if not comments:
+    print('  (no comments)')
+else:
+    for c in comments:
+        actor = c.get('actor_detail', {}).get('display_name', 'Unknown')
+        text = c.get('comment_stripped', c.get('comment_html', ''))[:200]
+        created = c.get('created_at', '')[:10]
+        print(f\"  [{created}] {actor}: {text}\")"
+}
+
+add_comment() {
+    local project="$1"
+    local seq_id="$2"
+    local comment="$3"
+
+    local project_id=$(get_project_id "$project")
+
+    # Get issue ID by sequence
+    local issue_id=$(curl -s -H "X-API-Key: $PLANE_API_KEY" \
+        "$PLANE_API_URL/api/v1/workspaces/$PLANE_WORKSPACE/projects/$project_id/issues/" | \
+        python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+for issue in data.get('results', []):
+    if issue['sequence_id'] == $seq_id:
+        print(issue['id'])
+        break")
+
+    if [ -z "$issue_id" ]; then
+        echo "Issue $project-$seq_id not found"
+        return 1
+    fi
+
+    ensure_session
+
+    # Escape comment for JSON
+    local escaped_comment=$(echo "$comment" | python3 -c "import sys,json; print(json.dumps(sys.stdin.read().strip()))")
+
+    curl -s -X POST -b "$COOKIE_FILE" -H "Content-Type: application/json" \
+        "$PLANE_API_URL/api/workspaces/$PLANE_WORKSPACE/projects/$project_id/issues/$issue_id/comments/" \
+        -d "{\"comment_html\": \"<p>$comment</p>\"}" >/dev/null
+
+    echo "Comment added to $project-$seq_id"
+}
+
 # =============================================================================
 # MAIN
 # =============================================================================
@@ -286,9 +401,13 @@ case "$cmd" in
     backlog|b)  list_issues_by_state "$1" "backlog" ;;
     start)      move_issue "$1" "$2" "In Progress" ;;
     finish|f)   move_issue "$1" "$2" "Done" ;;
+    stop)       move_issue "$1" "$2" "Todo" ;;
     new|n)      create_issue "$1" "$2" "${3:-none}" ;;
+    show)       show_issue "$1" "$2" ;;
+    comment)    add_comment "$1" "$2" "$3" ;;
     cycles|c)   list_cycles "$1" ;;
     pages|p)    list_pages "$1" ;;
+    page-new)   create_page "$1" "$2" "$3" ;;
     refresh|r)  rm -rf "$CACHE_DIR"/* "$COOKIE_FILE"; echo "Cache cleared" ;;
     help|h|"")
         echo "plane <cmd> [args]"
@@ -296,11 +415,21 @@ case "$cmd" in
         echo "  status [PROJECT]     Project summary"
         echo "  todo PROJECT         Todo items"
         echo "  doing PROJECT        In-progress items"
-        echo "  start PROJECT SEQ    Start working"
-        echo "  finish PROJECT SEQ   Mark done"
+        echo "  done PROJECT         Completed items"
+        echo "  backlog PROJECT      Backlog items"
+        echo ""
+        echo "  start PROJECT SEQ    Move to In Progress"
+        echo "  finish PROJECT SEQ   Move to Done"
+        echo "  stop PROJECT SEQ     Move back to Todo"
+        echo ""
         echo "  new PROJECT NAME     Create issue"
+        echo "  show PROJECT SEQ     Show issue details + comments"
+        echo "  comment PROJECT SEQ MSG  Add comment to issue"
+        echo ""
         echo "  cycles PROJECT       List cycles"
         echo "  pages PROJECT        List pages"
+        echo "  page-new PROJECT NAME [HTML]  Create page"
+        echo ""
         echo "  refresh              Clear cache"
         ;;
     *)
