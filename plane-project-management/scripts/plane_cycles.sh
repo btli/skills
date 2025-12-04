@@ -2,14 +2,32 @@
 # Plane Cycle (Sprint) Management Helper
 #
 # Usage:
-#   ./plane_cycles.sh list PROJECT          - List cycles in project
-#   ./plane_cycles.sh show PROJECT CYCLE    - Show cycle details
-#   ./plane_cycles.sh issues PROJECT CYCLE  - List issues in cycle
-#   ./plane_cycles.sh create PROJECT NAME START END [DESC] - Create cycle
-#   ./plane_cycles.sh add PROJECT CYCLE ISSUE1 [ISSUE2...] - Add issues to cycle
+#   ./plane_cycles.sh [-w WORKSPACE] list PROJECT          - List cycles in project
+#   ./plane_cycles.sh [-w WORKSPACE] show PROJECT CYCLE    - Show cycle details
+#   ./plane_cycles.sh [-w WORKSPACE] issues PROJECT CYCLE  - List issues in cycle
+#   ./plane_cycles.sh [-w WORKSPACE] create PROJECT NAME START END [DESC] - Create cycle
+#   ./plane_cycles.sh [-w WORKSPACE] add PROJECT CYCLE ISSUE1 [ISSUE2...] - Add issues to cycle
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Parse -w flag before sourcing library
+while getopts "w:" opt; do
+    case $opt in
+        w) export PLANE_WORKSPACE="$OPTARG" ;;
+        *) ;;
+    esac
+done
+shift $((OPTIND-1))
+
 source "$SCRIPT_DIR/plane_lib.sh"
+
+# Check workspace is set
+if [ -z "$PLANE_WORKSPACE" ]; then
+    echo "Error: No workspace specified." >&2
+    echo "Use: $0 -w WORKSPACE <command>" >&2
+    echo "  or: export PLANE_WORKSPACE=your-workspace" >&2
+    exit 1
+fi
 
 # Initialize authentication
 plane_init >/dev/null 2>&1

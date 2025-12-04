@@ -3,17 +3,35 @@
 # Quick access to task status and updates
 #
 # Usage:
-#   ./plane_tasks.sh list [PROJECT_IDENTIFIER]     - List all tasks
-#   ./plane_tasks.sh todo [PROJECT_IDENTIFIER]     - List To Do tasks
-#   ./plane_tasks.sh doing [PROJECT_IDENTIFIER]    - List In Progress tasks
-#   ./plane_tasks.sh done [PROJECT_IDENTIFIER]     - List Completed tasks
-#   ./plane_tasks.sh backlog [PROJECT_IDENTIFIER]  - List Backlog tasks
-#   ./plane_tasks.sh start PROJECT SEQ_ID          - Move task to In Progress
-#   ./plane_tasks.sh complete PROJECT SEQ_ID       - Move task to Done
-#   ./plane_tasks.sh create PROJECT "NAME" [DESC]  - Create new task
+#   ./plane_tasks.sh [-w WORKSPACE] list [PROJECT_IDENTIFIER]     - List all tasks
+#   ./plane_tasks.sh [-w WORKSPACE] todo [PROJECT_IDENTIFIER]     - List To Do tasks
+#   ./plane_tasks.sh [-w WORKSPACE] doing [PROJECT_IDENTIFIER]    - List In Progress tasks
+#   ./plane_tasks.sh [-w WORKSPACE] done [PROJECT_IDENTIFIER]     - List Completed tasks
+#   ./plane_tasks.sh [-w WORKSPACE] backlog [PROJECT_IDENTIFIER]  - List Backlog tasks
+#   ./plane_tasks.sh [-w WORKSPACE] start PROJECT SEQ_ID          - Move task to In Progress
+#   ./plane_tasks.sh [-w WORKSPACE] complete PROJECT SEQ_ID       - Move task to Done
+#   ./plane_tasks.sh [-w WORKSPACE] create PROJECT "NAME" [DESC]  - Create new task
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Parse -w flag before sourcing library
+while getopts "w:" opt; do
+    case $opt in
+        w) export PLANE_WORKSPACE="$OPTARG" ;;
+        *) ;;
+    esac
+done
+shift $((OPTIND-1))
+
 source "$SCRIPT_DIR/plane_lib.sh"
+
+# Check workspace is set
+if [ -z "$PLANE_WORKSPACE" ]; then
+    echo "Error: No workspace specified." >&2
+    echo "Use: $0 -w WORKSPACE <command>" >&2
+    echo "  or: export PLANE_WORKSPACE=your-workspace" >&2
+    exit 1
+fi
 
 # Initialize authentication
 plane_init >/dev/null 2>&1

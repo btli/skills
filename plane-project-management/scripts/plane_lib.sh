@@ -25,6 +25,17 @@ if [ -f ~/.claude/.env ]; then
     set +a
 fi
 
+# Load secrets from Phase (if available)
+_phase_get() {
+    phase secrets get "$1" --app claude-code 2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin).get('value',''))" 2>/dev/null
+}
+
+if command -v phase &> /dev/null; then
+    [ -z "$PLANE_API_KEY" ] && export PLANE_API_KEY=$(_phase_get PLANE_API_KEY)
+    [ -z "$PLANE_USERNAME" ] && export PLANE_USERNAME=$(_phase_get PLANE_USERNAME)
+    [ -z "$PLANE_PASSWORD" ] && export PLANE_PASSWORD=$(_phase_get PLANE_PASSWORD)
+fi
+
 # =============================================================================
 # INITIALIZATION & AUTHENTICATION
 # =============================================================================

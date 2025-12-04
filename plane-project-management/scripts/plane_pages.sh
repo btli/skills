@@ -3,16 +3,34 @@
 # Requires session-based authentication
 #
 # Usage:
-#   ./plane_pages.sh list PROJECT             - List pages in project
-#   ./plane_pages.sh show PROJECT PAGE_ID     - Show page details
-#   ./plane_pages.sh content PROJECT PAGE_ID  - Get page content (HTML)
-#   ./plane_pages.sh create PROJECT NAME [CONTENT] - Create page
-#   ./plane_pages.sh update PROJECT PAGE_ID CONTENT - Update page content
-#   ./plane_pages.sh from-file PROJECT FILE   - Create page from markdown file
-#   ./plane_pages.sh delete PROJECT PAGE_ID   - Delete page
+#   ./plane_pages.sh [-w WORKSPACE] list PROJECT             - List pages in project
+#   ./plane_pages.sh [-w WORKSPACE] show PROJECT PAGE_ID     - Show page details
+#   ./plane_pages.sh [-w WORKSPACE] content PROJECT PAGE_ID  - Get page content (HTML)
+#   ./plane_pages.sh [-w WORKSPACE] create PROJECT NAME [CONTENT] - Create page
+#   ./plane_pages.sh [-w WORKSPACE] update PROJECT PAGE_ID CONTENT - Update page content
+#   ./plane_pages.sh [-w WORKSPACE] from-file PROJECT FILE   - Create page from markdown file
+#   ./plane_pages.sh [-w WORKSPACE] delete PROJECT PAGE_ID   - Delete page
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Parse -w flag before sourcing library
+while getopts "w:" opt; do
+    case $opt in
+        w) export PLANE_WORKSPACE="$OPTARG" ;;
+        *) ;;
+    esac
+done
+shift $((OPTIND-1))
+
 source "$SCRIPT_DIR/plane_lib.sh"
+
+# Check workspace is set
+if [ -z "$PLANE_WORKSPACE" ]; then
+    echo "Error: No workspace specified." >&2
+    echo "Use: $0 -w WORKSPACE <command>" >&2
+    echo "  or: export PLANE_WORKSPACE=your-workspace" >&2
+    exit 1
+fi
 
 # Initialize authentication (required for pages)
 plane_init >/dev/null 2>&1
