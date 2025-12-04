@@ -457,6 +457,232 @@ Closes issue AI-5 by adding property search intent parsing."
 
 ---
 
+## Work Item Creation Guidelines
+
+When creating issues, cycles, or any work items in Plane, **always create thorough, well-structured descriptions** that allow any developer or agent to understand the work item without additional context.
+
+### Format: HTML Required
+
+**Important:** The Plane API uses `description_html` field and expects **HTML format**, not Markdown. The web UI may render Markdown, but the API requires HTML.
+
+#### Converting Markdown to HTML
+
+Use `pandoc` or Python to convert Markdown:
+
+```bash
+# Using pandoc (recommended)
+echo "# Title\n- Item 1\n- Item 2" | pandoc -f markdown -t html
+
+# Using Python
+python3 -c "import markdown; print(markdown.markdown(open('file.md').read()))"
+
+# Quick inline conversion for simple cases
+plane new AI "Title" "$(echo '# Heading
+- Item 1
+- Item 2' | pandoc -f markdown -t html)"
+```
+
+#### HTML Equivalents for Common Markdown
+
+| Markdown | HTML |
+|----------|------|
+| `# Heading` | `<h1>Heading</h1>` |
+| `## Subheading` | `<h2>Subheading</h2>` |
+| `**bold**` | `<strong>bold</strong>` |
+| `*italic*` | `<em>italic</em>` |
+| `- item` | `<ul><li>item</li></ul>` |
+| `1. item` | `<ol><li>item</li></ol>` |
+| `` `code` `` | `<code>code</code>` |
+| `[link](url)` | `<a href="url">link</a>` |
+| Code block | `<pre>code</pre>` |
+
+### Required Elements for Issues
+
+Every issue should include:
+
+1. **Context/Background** - Why is this work needed?
+2. **Objective** - What should be accomplished?
+3. **Success Criteria** - How do we know it's done?
+4. **Dependencies** - What blocks or is blocked by this?
+5. **Implementation Notes** - Pseudo code or approach (when applicable)
+
+### Issue Description Template
+
+```html
+<h2>🎯 Objective</h2>
+<p>Clear, concise statement of what needs to be done.</p>
+
+<h2>📋 Context</h2>
+<p>Background on why this work is needed. Link to related issues, discussions, or requirements.</p>
+
+<h2>✅ Success Criteria</h2>
+<ul>
+  <li>[ ] Specific, measurable criterion 1</li>
+  <li>[ ] Specific, measurable criterion 2</li>
+  <li>[ ] Tests pass / Coverage maintained</li>
+</ul>
+
+<h2>🔗 Dependencies</h2>
+<ul>
+  <li><strong>Blocked by:</strong> [PROJ-XX] Issue that must complete first</li>
+  <li><strong>Blocks:</strong> [PROJ-YY] Issue waiting on this</li>
+</ul>
+
+<h2>💡 Implementation Notes</h2>
+<p>Approach, pseudo code, or technical considerations:</p>
+<pre>
+// Pseudo code example
+function processData(input):
+    validate(input)
+    transform(input)
+    return result
+</pre>
+
+<h2>📎 References</h2>
+<ul>
+  <li>Link to documentation</li>
+  <li>Link to design specs</li>
+  <li>Related PRs or commits</li>
+</ul>
+```
+
+### CLI Example with Full Description
+
+```bash
+plane new AI "Implement Rate Limiting for API Endpoints" "$(cat <<'EOF'
+<h2>🎯 Objective</h2>
+<p>Add rate limiting to prevent API abuse and ensure fair usage across all clients.</p>
+
+<h2>📋 Context</h2>
+<p>Current API has no rate limiting, making it vulnerable to abuse. This affects system stability during high traffic periods.</p>
+
+<h2>✅ Success Criteria</h2>
+<ul>
+  <li>[ ] Rate limiter middleware implemented</li>
+  <li>[ ] Configurable limits per endpoint</li>
+  <li>[ ] Redis-backed token bucket algorithm</li>
+  <li>[ ] Returns 429 with Retry-After header when exceeded</li>
+  <li>[ ] Unit tests with >90% coverage</li>
+</ul>
+
+<h2>🔗 Dependencies</h2>
+<ul>
+  <li><strong>Blocked by:</strong> Redis connection setup (complete)</li>
+  <li><strong>Blocks:</strong> [AI-15] Public API launch</li>
+</ul>
+
+<h2>💡 Implementation Notes</h2>
+<pre>
+class RateLimiter:
+    def __init__(self, redis, limit, window):
+        self.redis = redis
+        self.limit = limit  # requests per window
+        self.window = window  # seconds
+
+    def is_allowed(self, key):
+        current = self.redis.incr(key)
+        if current == 1:
+            self.redis.expire(key, self.window)
+        return current <= self.limit
+</pre>
+EOF
+)"
+```
+
+### Cycle Creation Guidelines
+
+Cycles (sprints) should include:
+
+```bash
+plane cycle-new AI "Sprint 7: API Stability" 2025-02-01 2025-02-14 "$(cat <<'EOF'
+<h2>🎯 Sprint Goal</h2>
+<p>Improve API reliability and implement rate limiting before public launch.</p>
+
+<h2>📋 Focus Areas</h2>
+<ul>
+  <li>Rate limiting implementation</li>
+  <li>Error handling improvements</li>
+  <li>Performance monitoring setup</li>
+</ul>
+
+<h2>✅ Definition of Done</h2>
+<ul>
+  <li>All sprint issues completed or moved to backlog with justification</li>
+  <li>Code reviewed and merged</li>
+  <li>Staging deployment verified</li>
+  <li>Sprint retrospective completed</li>
+</ul>
+
+<h2>📊 Capacity</h2>
+<p>Team capacity: 40 story points</p>
+<p>Committed: 35 story points</p>
+EOF
+)"
+```
+
+### Anti-Patterns to Avoid
+
+**DO NOT create work items like:**
+
+```bash
+# ❌ BAD - No context, no description
+plane new AI "Fix bug"
+plane new AI "Add feature"
+plane new AI "Update code"
+
+# ❌ BAD - Vague title, empty description
+plane new AI "Refactor backend" ""
+
+# ❌ BAD - Title only, relies on tribal knowledge
+plane new AI "Handle the edge case John mentioned"
+```
+
+**ALWAYS create work items like:**
+
+```bash
+# ✅ GOOD - Clear title with context
+plane new AI "[BUG] Fix null pointer in search parser when query contains special chars"
+
+# ✅ GOOD - Descriptive with success criteria
+plane new AI "[FEAT] Add PDF export for reports" "<h2>Objective</h2><p>Allow users to export dashboard reports as PDF...</p>"
+```
+
+### Comment Guidelines
+
+When adding comments to issues:
+
+```bash
+# Progress updates should be substantive
+plane comment AI 5 "$(cat <<'EOF'
+<h3>📝 Progress Update (2025-02-01)</h3>
+<ul>
+  <li>✅ Implemented token bucket algorithm</li>
+  <li>✅ Added Redis integration</li>
+  <li>🔄 Working on: Per-endpoint configuration</li>
+  <li>⏳ Remaining: Tests, documentation</li>
+</ul>
+<p><strong>ETA:</strong> 2 more days</p>
+EOF
+)"
+
+# Completion comments should summarize what was done
+plane comment AI 5 "$(cat <<'EOF'
+<h3>✅ Completed</h3>
+<p>Implemented rate limiting with the following:</p>
+<ul>
+  <li>Token bucket algorithm (Redis-backed)</li>
+  <li>Configurable limits per endpoint</li>
+  <li>429 responses with Retry-After header</li>
+  <li>Comprehensive test suite (94% coverage)</li>
+</ul>
+<p><strong>PR:</strong> #234</p>
+<p><strong>Commit:</strong> abc123</p>
+EOF
+)"
+```
+
+---
+
 ## Troubleshooting
 
 ### Session Authentication Issues
@@ -487,11 +713,35 @@ API responses use cursor-based pagination:
 ```json
 {
   "total_count": 50,
-  "next_cursor": "1000:1:20",
-  "prev_cursor": "1000:-1:1",
+  "count": 100,
+  "total_pages": 3,
+  "next_cursor": "100:1:0",
+  "prev_cursor": null,
   "next_page_results": true,
+  "prev_page_results": false,
   "results": [...]
 }
 ```
 
-To paginate, add `?cursor={next_cursor}` to the request.
+### Pagination Parameters
+
+| Parameter | Description | Example |
+|-----------|-------------|---------|
+| `per_page` | Results per page (default: 100) | `?per_page=50` |
+| `cursor` | Cursor for next/prev page | `?cursor=100:1:0` |
+
+### Automatic Pagination
+
+The library functions (`plane_api_v1_paginated`, `plane_api_session_paginated`) automatically handle pagination, fetching all pages and combining results. This ensures you always get complete data sets regardless of size.
+
+### Manual Pagination Example
+
+```bash
+# First page
+curl -s -H "X-API-Key: $PLANE_API_KEY" \
+  "$PLANE_API_URL/api/v1/workspaces/$PLANE_WORKSPACE/projects/$PROJECT_ID/issues/?per_page=10"
+
+# Next page (using next_cursor from response)
+curl -s -H "X-API-Key: $PLANE_API_KEY" \
+  "$PLANE_API_URL/api/v1/workspaces/$PLANE_WORKSPACE/projects/$PROJECT_ID/issues/?per_page=10&cursor=10:1:0"
+```

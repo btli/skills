@@ -169,27 +169,188 @@ plane_api_session() {
 }
 
 # =============================================================================
+# PAGINATED API HELPERS
+# =============================================================================
+
+plane_api_session_paginated() {
+    # Make paginated API call using session cookie
+    # Fetches all pages and combines results
+    # Usage: plane_api_session_paginated ENDPOINT [PER_PAGE]
+    local endpoint="$1"
+    local per_page="${2:-100}"
+
+    local all_results="[]"
+    local cursor=""
+    local has_more=true
+
+    while [ "$has_more" = "true" ]; do
+        local url="$PLANE_API_URL/api/workspaces/$PLANE_WORKSPACE$endpoint"
+
+        # Add query params
+        if [[ "$url" == *"?"* ]]; then
+            url="${url}&per_page=$per_page"
+        else
+            url="${url}?per_page=$per_page"
+        fi
+
+        if [ -n "$cursor" ]; then
+            url="${url}&cursor=$cursor"
+        fi
+
+        local response
+        response=$(curl -s -b "$PLANE_COOKIE_FILE" "$url")
+
+        # Extract results and pagination info
+        local page_results next_cursor next_page
+        page_results=$(echo "$response" | python3 -c "
+import sys, json
+try:
+    data = json.load(sys.stdin)
+    results = data.get('results', []) if isinstance(data, dict) else data
+    print(json.dumps(results))
+except:
+    print('[]')
+" 2>/dev/null)
+
+        next_cursor=$(echo "$response" | python3 -c "
+import sys, json
+try:
+    data = json.load(sys.stdin)
+    print(data.get('next_cursor', '') or '')
+except:
+    print('')
+" 2>/dev/null)
+
+        next_page=$(echo "$response" | python3 -c "
+import sys, json
+try:
+    data = json.load(sys.stdin)
+    print('true' if data.get('next_page_results', False) else 'false')
+except:
+    print('false')
+" 2>/dev/null)
+
+        # Merge results
+        all_results=$(python3 -c "
+import sys, json
+existing = json.loads('''$all_results''')
+new = json.loads('''$page_results''')
+print(json.dumps(existing + new))
+" 2>/dev/null)
+
+        # Check if more pages
+        if [ "$next_page" = "true" ] && [ -n "$next_cursor" ]; then
+            cursor="$next_cursor"
+        else
+            has_more=false
+        fi
+    done
+
+    echo "$all_results"
+}
+
+plane_api_v1_paginated() {
+    # Make paginated API call using API key
+    # Fetches all pages and combines results
+    # Usage: plane_api_v1_paginated ENDPOINT [PER_PAGE]
+    local endpoint="$1"
+    local per_page="${2:-100}"
+
+    local all_results="[]"
+    local cursor=""
+    local has_more=true
+
+    while [ "$has_more" = "true" ]; do
+        local url="$PLANE_API_URL/api/v1/workspaces/$PLANE_WORKSPACE$endpoint"
+
+        # Add query params
+        if [[ "$url" == *"?"* ]]; then
+            url="${url}&per_page=$per_page"
+        else
+            url="${url}?per_page=$per_page"
+        fi
+
+        if [ -n "$cursor" ]; then
+            url="${url}&cursor=$cursor"
+        fi
+
+        local response
+        response=$(curl -s -H "X-API-Key: $PLANE_API_KEY" "$url")
+
+        # Extract results and pagination info
+        local page_results next_cursor next_page
+        page_results=$(echo "$response" | python3 -c "
+import sys, json
+try:
+    data = json.load(sys.stdin)
+    results = data.get('results', []) if isinstance(data, dict) else data
+    print(json.dumps(results))
+except:
+    print('[]')
+" 2>/dev/null)
+
+        next_cursor=$(echo "$response" | python3 -c "
+import sys, json
+try:
+    data = json.load(sys.stdin)
+    print(data.get('next_cursor', '') or '')
+except:
+    print('')
+" 2>/dev/null)
+
+        next_page=$(echo "$response" | python3 -c "
+import sys, json
+try:
+    data = json.load(sys.stdin)
+    print('true' if data.get('next_page_results', False) else 'false')
+except:
+    print('false')
+" 2>/dev/null)
+
+        # Merge results
+        all_results=$(python3 -c "
+import sys, json
+existing = json.loads('''$all_results''')
+new = json.loads('''$page_results''')
+print(json.dumps(existing + new))
+" 2>/dev/null)
+
+        # Check if more pages
+        if [ "$next_page" = "true" ] && [ -n "$next_cursor" ]; then
+            cursor="$next_cursor"
+        else
+            has_more=false
+        fi
+    done
+
+    echo "$all_results"
+}
+
+# =============================================================================
 # PROJECTS
 # =============================================================================
 
 plane_list_projects() {
-    # List all projects in workspace
+    # List all projects in workspace (with pagination)
     # Output: identifier: name (id)
-    plane_api_v1 GET "/projects/" | python3 -c "
+    plane_api_v1_paginated "/projects/" | python3 -c "
 import sys, json
 data = json.load(sys.stdin)
-for p in data.get('results', []):
+# paginated helper returns array directly
+projects = data if isinstance(data, list) else data.get('results', [])
+for p in projects:
     print(f\"{p['identifier']}: {p['name']} ({p['id']})\")"
 }
 
 plane_get_project_id() {
-    # Get project ID by identifier
+    # Get project ID by identifier (with pagination)
     # Usage: plane_get_project_id IDENTIFIER
     local identifier="$1"
-    plane_api_v1 GET "/projects/" | python3 -c "
+    plane_api_v1_paginated "/projects/" | python3 -c "
 import sys, json
 data = json.load(sys.stdin)
-for p in data.get('results', []):
+projects = data if isinstance(data, list) else data.get('results', [])
+for p in projects:
     if p['identifier'] == '$identifier':
         print(p['id'])
         break"
@@ -207,40 +368,43 @@ plane_get_project() {
 # =============================================================================
 
 plane_list_states() {
-    # List states for a project
+    # List states for a project (with pagination)
     # Usage: plane_list_states PROJECT_ID
     local project_id="$1"
-    plane_api_v1 GET "/projects/$project_id/states/" | python3 -c "
+    plane_api_v1_paginated "/projects/$project_id/states/" | python3 -c "
 import sys, json
 data = json.load(sys.stdin)
-for s in data.get('results', []):
+states = data if isinstance(data, list) else data.get('results', [])
+for s in states:
     print(f\"{s['name']}: {s['id']} (group: {s['group']})\")"
 }
 
 plane_get_state_id() {
-    # Get state ID by name
+    # Get state ID by name (with pagination)
     # Usage: plane_get_state_id PROJECT_ID STATE_NAME
     local project_id="$1"
     local state_name="$2"
-    plane_api_v1 GET "/projects/$project_id/states/" | python3 -c "
+    plane_api_v1_paginated "/projects/$project_id/states/" | python3 -c "
 import sys, json
 data = json.load(sys.stdin)
-for s in data.get('results', []):
+states = data if isinstance(data, list) else data.get('results', [])
+for s in states:
     if s['name'].lower() == '$state_name'.lower():
         print(s['id'])
         break"
 }
 
 plane_get_state_id_by_group() {
-    # Get first state ID in a state group
+    # Get first state ID in a state group (with pagination)
     # Usage: plane_get_state_id_by_group PROJECT_ID GROUP
     # Groups: backlog, unstarted, started, completed, cancelled
     local project_id="$1"
     local group="$2"
-    plane_api_v1 GET "/projects/$project_id/states/" | python3 -c "
+    plane_api_v1_paginated "/projects/$project_id/states/" | python3 -c "
 import sys, json
 data = json.load(sys.stdin)
-for s in data.get('results', []):
+states = data if isinstance(data, list) else data.get('results', [])
+for s in states:
     if s['group'] == '$group':
         print(s['id'])
         break"
@@ -251,7 +415,7 @@ for s in data.get('results', []):
 # =============================================================================
 
 plane_list_issues() {
-    # List issues in a project (uses session auth for state__group field)
+    # List issues in a project with pagination (uses session auth for state__group field)
     # Usage: plane_list_issues PROJECT_ID [--state STATE_GROUP] [--priority PRIORITY]
     local project_id="$1"
     shift
@@ -267,11 +431,11 @@ plane_list_issues() {
         esac
     done
 
-    # Use session auth to get state__group field
-    plane_api_session GET "/projects/$project_id/issues/" | python3 -c "
+    # Use session auth with pagination to get all issues
+    plane_api_session_paginated "/projects/$project_id/issues/" | python3 -c "
 import sys, json
 data = json.load(sys.stdin)
-results = data.get('results', []) if isinstance(data, dict) else data
+results = data if isinstance(data, list) else data.get('results', [])
 state_filter = '$state_filter'
 priority_filter = '$priority_filter'
 for issue in results:
@@ -319,14 +483,15 @@ plane_get_issue() {
 }
 
 plane_get_issue_by_sequence() {
-    # Get issue ID by sequence number
+    # Get issue ID by sequence number (with pagination)
     # Usage: plane_get_issue_by_sequence PROJECT_ID SEQUENCE_ID
     local project_id="$1"
     local sequence_id="$2"
-    plane_api_v1 GET "/projects/$project_id/issues/" | python3 -c "
+    plane_api_v1_paginated "/projects/$project_id/issues/" | python3 -c "
 import sys, json
 data = json.load(sys.stdin)
-for issue in data.get('results', []):
+issues = data if isinstance(data, list) else data.get('results', [])
+for issue in issues:
     if issue['sequence_id'] == $sequence_id:
         print(issue['id'])
         break"
@@ -408,10 +573,10 @@ plane_delete_issue() {
 # =============================================================================
 
 plane_list_cycles() {
-    # List cycles in a project (uses session auth)
+    # List cycles in a project with pagination (uses session auth)
     # Usage: plane_list_cycles PROJECT_ID
     local project_id="$1"
-    plane_api_session GET "/projects/$project_id/cycles/" | python3 -c "
+    plane_api_session_paginated "/projects/$project_id/cycles/" | python3 -c "
 import sys, json
 data = json.load(sys.stdin)
 cycles = data if isinstance(data, list) else data.get('results', [])
@@ -484,11 +649,11 @@ plane_add_issues_to_cycle() {
 }
 
 plane_list_cycle_issues() {
-    # List issues in a cycle
+    # List issues in a cycle with pagination
     # Usage: plane_list_cycle_issues PROJECT_ID CYCLE_ID
     local project_id="$1"
     local cycle_id="$2"
-    plane_api_session GET "/projects/$project_id/cycles/$cycle_id/cycle-issues/" | python3 -c "
+    plane_api_session_paginated "/projects/$project_id/cycles/$cycle_id/cycle-issues/" | python3 -c "
 import sys, json
 data = json.load(sys.stdin)
 issues = data if isinstance(data, list) else data.get('results', [])
@@ -502,10 +667,10 @@ for ci in issues:
 # =============================================================================
 
 plane_list_pages() {
-    # List pages in a project
+    # List pages in a project with pagination
     # Usage: plane_list_pages PROJECT_ID
     local project_id="$1"
-    plane_api_session GET "/projects/$project_id/pages/" | python3 -c "
+    plane_api_session_paginated "/projects/$project_id/pages/" | python3 -c "
 import sys, json
 data = json.load(sys.stdin)
 pages = data if isinstance(data, list) else data.get('results', [])
@@ -579,13 +744,14 @@ plane_delete_page() {
 # =============================================================================
 
 plane_list_modules() {
-    # List modules in a project
+    # List modules in a project with pagination
     # Usage: plane_list_modules PROJECT_ID
     local project_id="$1"
-    plane_api_v1 GET "/projects/$project_id/modules/" | python3 -c "
+    plane_api_v1_paginated "/projects/$project_id/modules/" | python3 -c "
 import sys, json
 data = json.load(sys.stdin)
-for m in data.get('results', []):
+modules = data if isinstance(data, list) else data.get('results', [])
+for m in modules:
     status = m.get('status', '?')
     print(f\"{m['name']}: {m['id']} [{status}]\")"
 }
@@ -611,13 +777,14 @@ plane_create_module() {
 # =============================================================================
 
 plane_list_labels() {
-    # List labels in a project
+    # List labels in a project with pagination
     # Usage: plane_list_labels PROJECT_ID
     local project_id="$1"
-    plane_api_v1 GET "/projects/$project_id/labels/" | python3 -c "
+    plane_api_v1_paginated "/projects/$project_id/labels/" | python3 -c "
 import sys, json
 data = json.load(sys.stdin)
-for l in data.get('results', []):
+labels = data if isinstance(data, list) else data.get('results', [])
+for l in labels:
     print(f\"{l['name']}: {l['id']} ({l.get('color','#000')})\")"
 }
 
@@ -637,8 +804,8 @@ plane_create_label() {
 # =============================================================================
 
 plane_list_members() {
-    # List workspace members
-    plane_api_session GET "/members/" | python3 -c "
+    # List workspace members with pagination
+    plane_api_session_paginated "/members/" | python3 -c "
 import sys, json
 data = json.load(sys.stdin)
 members = data if isinstance(data, list) else data.get('results', [])
@@ -648,10 +815,10 @@ for m in members:
 }
 
 plane_get_member_id() {
-    # Get member ID by email
+    # Get member ID by email with pagination
     # Usage: plane_get_member_id EMAIL
     local email="$1"
-    plane_api_session GET "/members/" | python3 -c "
+    plane_api_session_paginated "/members/" | python3 -c "
 import sys, json
 data = json.load(sys.stdin)
 members = data if isinstance(data, list) else data.get('results', [])
